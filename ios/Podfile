@@ -20,12 +20,6 @@ target 'KarteScanApp' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
-  # react-native-fs
-  pod 'RNFS', :path => '../node_modules/react-native-fs'
-
-  # react-native-html-to-pdf
-  pod 'RNHTMLtoPDF', :path => '../node_modules/react-native-html-to-pdf'
-
   post_install do |installer|
     react_native_post_install(
       installer,
