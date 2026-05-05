@@ -5,17 +5,16 @@ workflows:
     integrations:
       app_store_connect: Codemagic
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.oyama.kartescanapp
       vars:
         XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
         XCODE_SCHEME: "KarteScanApp"
+        DEVELOPMENT_TEAM: "TN5DXWL8N9"
       node: v22
       xcode: 16.2
     scripts:
       - name: Install dependencies
         script: npm install --legacy-peer-deps
+
       - name: Patch RCTTurboModule for iOS 26
         script: |
           python3 - << 'PYEOF'
@@ -34,18 +33,42 @@ workflows:
               print('WARNING: Patch target not found - may be already patched or version mismatch')
               sys.exit(0)
           PYEOF
+
       - name: Install CocoaPods
         script: |
           cd ios
           pod install
+
       - name: Build iOS
         script: |
-          xcode-project use-profiles
-          xcode-project build-ipa \
-            --workspace "$XCODE_WORKSPACE" \
-            --scheme "$XCODE_SCHEME"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > /tmp/AuthKey.p8
+
+          xcodebuild \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -archivePath /tmp/KarteScanApp.xcarchive \
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath /tmp/AuthKey.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            archive
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath /tmp/KarteScanApp.xcarchive \
+            -exportPath build/ios/ipa \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath /tmp/AuthKey.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
     artifacts:
       - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
     publishing:
       app_store_connect:
         auth: integration
