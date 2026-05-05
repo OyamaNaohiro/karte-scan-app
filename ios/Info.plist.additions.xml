@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  以下のキーを ios/KarteScanApp/Info.plist の <dict> 内に追加してください。
+  既存の Info.plist の </dict></plist> の直前に挿入します。
+-->
+<additions>
+
+  <!-- カメラ使用許可 (VNDocumentCameraViewController に必須) -->
+  <key>NSCameraUsageDescription</key>
+  <string>カルテをスキャンするためにカメラへのアクセスが必要です。</string>
+
+  <!-- フォトライブラリ保存 (任意：画像をアルバムへ保存する場合) -->
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>スキャン画像をフォトライブラリに保存するために使用します。</string>
+
+</additions>

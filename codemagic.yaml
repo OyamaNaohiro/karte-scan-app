@@ -1,0 +1,139 @@
+workflows:
+
+  # ─────────────────────────────────────────
+  # 開発用ビルド (Ad Hoc / 実機テスト配布)
+  # ─────────────────────────────────────────
+  ios-development:
+    name: iOS Development Build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      # Codemagic UI > App Settings > Environment variables で設定
+      # CM_CERTIFICATE           : p12ファイル (base64)
+      # CM_CERTIFICATE_PASSWORD  : p12パスワード
+      # CM_PROVISIONING_PROFILE  : mobileprovisionファイル (base64)
+      ios_signing:
+        distribution_type: development      # ad_hoc / app_store / development
+        bundle_identifier: com.yourcompany.kartescanapp  # ← 実際のBundle IDに変更
+      vars:
+        BUNDLE_ID: "com.yourcompany.kartescanapp"   # ← 変更必須
+        XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
+        XCODE_SCHEME: "KarteScanApp"
+        XCODE_CONFIG: "Debug"
+      node: v20
+      xcode: latest
+      cocoapods: default
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: develop
+          include: true
+
+    scripts:
+      - name: Set up Node.js
+        script: |
+          node --version
+          npm --version
+
+      - name: Install npm dependencies
+        script: npm ci
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios
+          pod install --repo-update
+
+      - name: Build iOS (Debug)
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME" \
+            --config "$XCODE_CONFIG" \
+            --archive-flags="-destination 'generic/platform=iOS'"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      email:
+        recipients:
+          - oyama0325baba@gmail.com   # ← 通知先メールアドレス
+        notify:
+          success: true
+          failure: true
+
+  # ─────────────────────────────────────────
+  # リリース用ビルド (App Store Connect 配布)
+  # ─────────────────────────────────────────
+  ios-release:
+    name: iOS Release Build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.yourcompany.kartescanapp  # ← 変更必須
+      vars:
+        BUNDLE_ID: "com.yourcompany.kartescanapp"   # ← 変更必須
+        XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
+        XCODE_SCHEME: "KarteScanApp"
+        XCODE_CONFIG: "Release"
+        # App Store Connect API Key (Codemagic UI で設定)
+        # APP_STORE_CONNECT_ISSUER_ID
+        # APP_STORE_CONNECT_KEY_IDENTIFIER
+        # APP_STORE_CONNECT_PRIVATE_KEY
+      node: v20
+      xcode: latest
+      cocoapods: default
+
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "v*"
+          include: true
+
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios
+          pod install --repo-update
+
+      - name: Set build number from Codemagic build number
+        script: |
+          cd ios
+          agvtool new-version -all $BUILD_NUMBER
+
+      - name: Build iOS (Release)
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME" \
+            --config "$XCODE_CONFIG"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - internal-testers
+        submit_to_app_store: false   # 本番公開時は true に変更
+
+      email:
+        recipients:
+          - oyama0325baba@gmail.com
+        notify:
+          success: true
+          failure: true
