@@ -43,7 +43,9 @@ workflows:
           xcode-project use-profiles
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
-            --scheme "$XCODE_SCHEME"
+            --scheme "$XCODE_SCHEME" \
+            --xcarg "CODE_SIGN_STYLE=Manual" \
+            --xcarg "PROVISIONING_PROFILE_SPECIFIER=KarteScanAppDistribution"
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
