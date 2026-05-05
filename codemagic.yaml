@@ -41,7 +41,13 @@ workflows:
 
       - name: Build iOS
         script: |
-          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY" > /tmp/AuthKey.p8
+          python3 -c "
+          import os
+          key = os.environ.get('APP_STORE_CONNECT_PRIVATE_KEY', '')
+          key = key.replace('\\\\n', '\\n')
+          open('/tmp/AuthKey.p8', 'w').write(key)
+          print('API key written to /tmp/AuthKey.p8')
+          "
 
           xcodebuild \
             -workspace "$XCODE_WORKSPACE" \
