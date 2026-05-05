@@ -15,7 +15,7 @@ workflows:
       xcode: 16.2
     scripts:
       - name: Install dependencies
-        script: npm install
+        script: npm install --legacy-peer-deps
       - name: Patch RCTTurboModule for iOS 26
         script: |
           python3 - << 'PYEOF'
