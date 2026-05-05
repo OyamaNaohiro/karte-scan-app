@@ -15,9 +15,9 @@ workflows:
       # CM_PROVISIONING_PROFILE  : mobileprovisionファイル (base64)
       ios_signing:
         distribution_type: development      # ad_hoc / app_store / development
-        bundle_identifier: com.yourcompany.kartescanapp  # ← 実際のBundle IDに変更
+        bundle_identifier: com.oyama.kartescanapp  # ← 実際のBundle IDに変更
       vars:
-        BUNDLE_ID: "com.yourcompany.kartescanapp"   # ← 変更必須
+        BUNDLE_ID: "com.oyama.kartescanapp"   # ← 変更必須
         XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
         XCODE_SCHEME: "KarteScanApp"
         XCODE_CONFIG: "Debug"
@@ -77,9 +77,9 @@ workflows:
     environment:
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.yourcompany.kartescanapp  # ← 変更必須
+        bundle_identifier: com.oyama.kartescanapp  # ← 変更必須
       vars:
-        BUNDLE_ID: "com.yourcompany.kartescanapp"   # ← 変更必須
+        BUNDLE_ID: "com.oyama.kartescanapp"   # ← 変更必須
         XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
         XCODE_SCHEME: "KarteScanApp"
         XCODE_CONFIG: "Release"
