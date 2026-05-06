@@ -14,6 +14,12 @@ workflows:
       node: v22
       xcode: 16.2
     scripts:
+      - name: Set build number
+        script: |
+          # Use Codemagic's build number to avoid App Store Connect duplicate errors
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" ios/KarteScanApp/Info.plist
+          echo "CFBundleVersion set to $BUILD_NUMBER"
+
       - name: Install dependencies
         script: npm install --legacy-peer-deps
 
