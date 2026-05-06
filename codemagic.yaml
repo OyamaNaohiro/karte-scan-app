@@ -86,6 +86,12 @@ workflows:
           echo "=== Installed profiles ==="
           ls "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null || echo "No profiles found"
 
+      - name: Validate storyboard
+        script: |
+          echo "=== ibtool validation ==="
+          ibtool --errors --warnings --notices --output-format human-readable-text \
+            ios/KarteScanApp/LaunchScreen.storyboard 2>&1 || true
+
       - name: Build iOS
         script: |
           PBXPROJ="ios/KarteScanApp.xcodeproj/project.pbxproj"
@@ -97,6 +103,9 @@ workflows:
 
           echo "=== Bundle IDs in project ==="
           grep PRODUCT_BUNDLE_IDENTIFIER "$PBXPROJ"
+
+          # Clear stale DerivedData cache
+          rm -rf ~/Library/Developer/Xcode/DerivedData/KarteScanApp-*
 
           xcode-project use-profiles
           xcode-project build-ipa \
