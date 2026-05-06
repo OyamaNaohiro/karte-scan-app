@@ -5,6 +5,8 @@ workflows:
     integrations:
       app_store_connect: Codemagic
     environment:
+      groups:
+        - ios-signing
       vars:
         XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
         XCODE_SCHEME: "KarteScanApp"
