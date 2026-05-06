@@ -5,11 +5,12 @@ workflows:
     integrations:
       app_store_connect: Codemagic
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.oyama.kartescanapp
       vars:
         XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
         XCODE_SCHEME: "KarteScanApp"
-        BUNDLE_ID: "com.oyama.kartescanapp"
-        DEVELOPMENT_TEAM: "TN5DXWL8N9"
       node: v22
       xcode: 16.2
     scripts:
@@ -40,14 +41,6 @@ workflows:
           cd ios
           pod install
 
-      - name: Create provisioning profile via App Store Connect API
-        script: |
-          # CodemagicのCLIツールでプロファイルを作成・取得してインストール
-          app-store-connect fetch-signing-files \
-            "$BUNDLE_ID" \
-            --type IOS_APP_STORE \
-            --create
-
       - name: Build iOS
         script: |
           xcode-project use-profiles
@@ -57,7 +50,6 @@ workflows:
 
     artifacts:
       - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
 
     publishing:
       app_store_connect:
