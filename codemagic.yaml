@@ -55,6 +55,12 @@ workflows:
 
       - name: Build iOS
         script: |
+          # 自動署名を手動署名に切り替え
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
+            ios/KarteScanApp.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = "TN5DXWL8N9";/g' \
+            ios/KarteScanApp.xcodeproj/project.pbxproj
+
           xcode-project use-profiles
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
