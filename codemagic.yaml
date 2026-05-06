@@ -5,12 +5,10 @@ workflows:
     integrations:
       app_store_connect: Codemagic
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.oyama.kartescanapp
       vars:
         XCODE_WORKSPACE: "ios/KarteScanApp.xcworkspace"
         XCODE_SCHEME: "KarteScanApp"
+        BUNDLE_ID: "com.oyama.kartescanapp"
       node: v22
       xcode: 16.2
     scripts:
@@ -40,6 +38,16 @@ workflows:
         script: |
           cd ios
           pod install
+
+      - name: Create signing certificate and provisioning profile
+        script: |
+          app-store-connect fetch-signing-files \
+            "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+
+      - name: Add certificates to keychain
+        script: keychain add-certificates
 
       - name: Build iOS
         script: |
