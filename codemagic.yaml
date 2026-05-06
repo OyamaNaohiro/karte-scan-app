@@ -41,6 +41,31 @@ workflows:
           cd ios
           pod install
 
+      - name: Generate app icon
+        script: |
+          python3 - << 'PYEOF'
+          import struct, zlib, os
+
+          def write_png(path, width, height, r, g, b):
+              def chunk(tag, data):
+                  c = tag + data
+                  return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+              scanline = bytes([0] + [r, g, b] * width)
+              raw = scanline * height
+              png = (
+                  b'\x89PNG\r\n\x1a\n'
+                  + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                  + chunk(b'IDAT', zlib.compress(raw, 9))
+                  + chunk(b'IEND', b'')
+              )
+              os.makedirs(os.path.dirname(path), exist_ok=True)
+              with open(path, 'wb') as f:
+                  f.write(png)
+
+          write_png('ios/KarteScanApp/Images.xcassets/AppIcon.appiconset/AppIcon-1024.png', 1024, 1024, 0, 122, 255)
+          print('App icon generated successfully')
+          PYEOF
+
       - name: Create signing certificate and provisioning profile
         script: |
           PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
