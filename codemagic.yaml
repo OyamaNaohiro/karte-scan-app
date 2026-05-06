@@ -63,11 +63,15 @@ workflows:
 
       - name: Build iOS
         script: |
-          # 自動署名を手動署名に切り替え
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
-            ios/KarteScanApp.xcodeproj/project.pbxproj
-          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = "TN5DXWL8N9";/g' \
-            ios/KarteScanApp.xcodeproj/project.pbxproj
+          PBXPROJ="ios/KarteScanApp.xcodeproj/project.pbxproj"
+
+          # Bundle ID・署名設定を修正
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID;/g" "$PBXPROJ"
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' "$PBXPROJ"
+          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = "TN5DXWL8N9";/g' "$PBXPROJ"
+
+          echo "=== Bundle IDs in project ==="
+          grep PRODUCT_BUNDLE_IDENTIFIER "$PBXPROJ"
 
           xcode-project use-profiles
           xcode-project build-ipa \
