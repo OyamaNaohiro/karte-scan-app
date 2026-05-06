@@ -81,19 +81,21 @@ workflows:
       - name: Add certificates to keychain
         script: keychain add-certificates
 
+      - name: Fix keychain access for codesign
+        script: |
+          # errSecInternalComponent fix: grant codesign access to private keys
+          # without user interaction (required on macOS Ventura/Sonoma CI)
+          for keychain in $(security list-keychains -d user | tr -d '"' | tr -d ' '); do
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$keychain" 2>/dev/null \
+              && echo "Partition list set for: $keychain" || true
+          done
+          echo "=== Available signing identities ==="
+          security find-identity -v -p codesigning
+
       - name: Verify profiles installed
         script: |
           echo "=== Installed profiles ==="
           ls "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null || echo "No profiles found"
-
-      - name: Diagnose signing and pods
-        script: |
-          echo "=== Signing identities in keychain ==="
-          security find-identity -v -p codesigning 2>&1 || true
-          echo "=== Pods frameworks script ==="
-          cat "ios/Pods/Target Support Files/Pods-KarteScanApp/Pods-KarteScanApp-frameworks.sh" 2>/dev/null | head -60 || echo "Script not found"
-          echo "=== Release xcfilelist (input) ==="
-          cat "ios/Pods/Target Support Files/Pods-KarteScanApp/Pods-KarteScanApp-frameworks-Release-input-files.xcfilelist" 2>/dev/null || echo "Not found"
 
       - name: Build iOS
         script: |
@@ -107,39 +109,12 @@ workflows:
           echo "=== Bundle IDs in project ==="
           grep PRODUCT_BUNDLE_IDENTIFIER "$PBXPROJ"
 
-          # Clear stale DerivedData cache
           rm -rf ~/Library/Developer/Xcode/DerivedData/KarteScanApp-*
 
           xcode-project use-profiles
-
-          ARCHIVE_PATH="build/ios/xcarchive/KarteScanApp.xcarchive"
-          mkdir -p build/ios/xcarchive build/ios/ipa
-
-          # Archive with full output captured for diagnosis
-          set -o pipefail
-          xcodebuild \
-            -workspace "$XCODE_WORKSPACE" \
-            -scheme "$XCODE_SCHEME" \
-            -archivePath "$ARCHIVE_PATH" \
-            archive \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            DEVELOPMENT_TEAM=TN5DXWL8N9 \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            CODE_SIGN_STYLE=Manual \
-            2>&1 | tee /tmp/xcodebuild.log | grep -E "error:|warning:.*error|PhaseScript|Embed|Frameworks|codesign|▸ |Build succeeded|FAILED" || true
-
-          if grep -q "BUILD FAILED" /tmp/xcodebuild.log; then
-            echo "=== Full error context ==="
-            grep -A 30 "error:" /tmp/xcodebuild.log | head -150
-            exit 1
-          fi
-
-          # Export IPA
-          xcodebuild \
-            -exportArchive \
-            -archivePath "$ARCHIVE_PATH" \
-            -exportPath build/ios/ipa \
-            -exportOptionsPlist /Users/builder/export_options.plist
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
 
     artifacts:
       - build/ios/ipa/*.ipa
