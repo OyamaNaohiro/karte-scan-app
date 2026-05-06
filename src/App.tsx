@@ -9,14 +9,16 @@ import {
   SafeAreaView,
   StatusBar,
   ScrollView,
+  Image,
 } from 'react-native';
 import { DocumentScanner } from './utils/DocumentScanner';
 import { parseKarteText } from './utils/karteParser';
-import { saveRecord } from './utils/fileStorage';
+import { saveRecord, savePdfOnly } from './utils/fileStorage';
 import { KarteForm } from './components/KarteForm';
 import { KarteData } from './types';
 
-type AppState = 'idle' | 'scanning' | 'review' | 'saving' | 'done';
+type AppState = 'idle' | 'scanning' | 'review' | 'pdf-review' | 'saving' | 'done';
+type ScanMode = 'ocr' | 'pdf';
 
 const EMPTY_KARTE: KarteData = {
   patientName: '',
@@ -34,20 +36,36 @@ export default function App() {
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [savedPdfPath, setSavedPdfPath] = useState('');
 
-  async function handleScan() {
+  async function handleScan(mode: ScanMode) {
     try {
       setAppState('scanning');
       const result = await DocumentScanner.scan();
 
-      const parsed = parseKarteText(result.texts);
-      setKarteData(parsed);
       setPageImages(result.pageImages);
-      setAppState('review');
+      if (mode === 'ocr') {
+        const parsed = parseKarteText(result.texts);
+        setKarteData(parsed);
+        setAppState('review');
+      } else {
+        setAppState('pdf-review');
+      }
     } catch (err: any) {
       setAppState('idle');
       if (err?.code !== 'CANCELLED') {
         Alert.alert('スキャンエラー', err?.message ?? '不明なエラー');
       }
+    }
+  }
+
+  async function handleSavePdfOnly() {
+    try {
+      setAppState('saving');
+      const record = await savePdfOnly(pageImages);
+      setSavedPdfPath(record.pdfPath);
+      setAppState('done');
+    } catch (err: any) {
+      setAppState('pdf-review');
+      Alert.alert('保存エラー', err?.message ?? '保存に失敗しました');
     }
   }
 
@@ -76,7 +94,7 @@ export default function App() {
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>カルテスキャン</Text>
-        {appState === 'review' && (
+        {(appState === 'review' || appState === 'pdf-review') && (
           <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
             <Text style={styles.resetText}>やり直す</Text>
           </TouchableOpacity>
@@ -89,10 +107,20 @@ export default function App() {
         {appState === 'idle' && (
           <View style={styles.center}>
             <Text style={styles.description}>
-              カルテをカメラでスキャンし、{'\n'}OCRで自動入力します。
+              スキャンの種類を選択してください。
             </Text>
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleScan}>
-              <Text style={styles.primaryBtnText}>スキャン開始</Text>
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              onPress={() => handleScan('ocr')}>
+              <Text style={styles.primaryBtnText}>カルテスキャン（OCR）</Text>
+              <Text style={styles.btnSubText}>テキスト抽出・編集あり</Text>
+            </TouchableOpacity>
+            <View style={styles.btnSpacer} />
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => handleScan('pdf')}>
+              <Text style={styles.secondaryBtnText}>書類をPDFに変換</Text>
+              <Text style={styles.btnSubTextDark}>そのままPDF保存</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -112,10 +140,47 @@ export default function App() {
               style={styles.flex}
               contentContainerStyle={styles.formContent}>
               <KarteForm data={karteData} onChange={setKarteData} />
+              {pageImages.length > 0 && (
+                <View style={styles.previewSection}>
+                  <Text style={styles.previewTitle}>スキャン画像プレビュー</Text>
+                  {pageImages.map((b64: string, i: number) => (
+                    <Image
+                      key={i}
+                      source={{ uri: `data:image/jpeg;base64,${b64}` }}
+                      style={styles.previewImage}
+                      resizeMode="contain"
+                    />
+                  ))}
+                </View>
+              )}
             </ScrollView>
             <View style={styles.actionBar}>
               <TouchableOpacity style={styles.primaryBtn} onPress={handleSave}>
                 <Text style={styles.primaryBtnText}>保存する</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* PDF確認画面 */}
+        {appState === 'pdf-review' && (
+          <View style={styles.flex}>
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.formContent}>
+              <Text style={styles.previewTitle}>スキャン画像の確認</Text>
+              {pageImages.map((b64: string, i: number) => (
+                <Image
+                  key={i}
+                  source={{ uri: `data:image/jpeg;base64,${b64}` }}
+                  style={styles.previewImage}
+                  resizeMode="contain"
+                />
+              ))}
+            </ScrollView>
+            <View style={styles.actionBar}>
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleSavePdfOnly}>
+                <Text style={styles.primaryBtnText}>PDFとして保存する</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -203,4 +268,37 @@ const styles = StyleSheet.create({
   doneTitle: { fontSize: 24, fontWeight: '700', color: '#111', marginBottom: 8 },
   doneSubtitle: { fontSize: 15, color: '#555', marginBottom: 12 },
   pathText: { fontSize: 11, color: '#999', textAlign: 'center', lineHeight: 18 },
+  secondaryBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#2563EB',
+    paddingHorizontal: 40,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    width: '100%',
+  },
+  secondaryBtnText: { color: '#2563EB', fontSize: 17, fontWeight: '700' },
+  btnSubText: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
+  btnSubTextDark: { color: '#2563EB', fontSize: 12, marginTop: 2, opacity: 0.7 },
+  btnSpacer: { height: 16 },
+  previewSection: {
+    marginTop: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 16,
+  },
+  previewTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 12,
+  },
+  previewImage: {
+    width: '100%',
+    height: 480,
+    marginBottom: 16,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+  },
 });

@@ -84,6 +84,48 @@ export async function saveRecord(
   return record;
 }
 
+export async function savePdfOnly(pageImages: string[]): Promise<SavedRecord> {
+  await ensureDir();
+
+  const id = `scan_${Date.now()}`;
+  const pdfPath = `${RECORDS_DIR}/${id}.pdf`;
+  const metaPath = `${RECORDS_DIR}/${id}.json`;
+
+  const imagesHtml = pageImages
+    .map(b64 => `<img src="data:image/jpeg;base64,${b64}" style="width:100%;margin-bottom:20px;"/>`)
+    .join('');
+
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"/><style>body{margin:10px;}img{max-width:100%;}</style></head><body>${imagesHtml}</body></html>`;
+
+  const pdf = await RNHTMLtoPDF.convert({
+    html,
+    fileName: id,
+    directory: RECORDS_DIR,
+    base64: false,
+  });
+
+  if (!pdf.filePath) throw new Error('PDF生成に失敗しました');
+
+  if (pdf.filePath !== pdfPath) {
+    await RNFS.moveFile(pdf.filePath, pdfPath);
+  }
+
+  const emptyKarte: KarteData = {
+    patientName: '', birthDate: '', gender: '',
+    diagnosis: '', doctor: '', prescription: '', rawText: '',
+  };
+  const record: SavedRecord = {
+    id,
+    karteData: emptyKarte,
+    pdfPath,
+    metaPath,
+    createdAt: new Date().toISOString(),
+  };
+  await RNFS.writeFile(metaPath, JSON.stringify(record, null, 2), 'utf8');
+
+  return record;
+}
+
 export async function listRecords(): Promise<SavedRecord[]> {
   await ensureDir();
   const files = await RNFS.readDir(RECORDS_DIR);
