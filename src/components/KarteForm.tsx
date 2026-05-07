@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   StyleSheet,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { KarteData } from '../types';
 
@@ -24,6 +25,8 @@ const FIELDS: { key: keyof KarteData; label: string; multiline?: boolean }[] = [
 ];
 
 export function KarteForm({ data, onChange }: Props) {
+  const [showRaw, setShowRaw] = useState(false);
+
   function handleChange(key: keyof KarteData, value: string) {
     onChange({ ...data, [key]: value });
   }
@@ -44,6 +47,24 @@ export function KarteForm({ data, onChange }: Props) {
           />
         </View>
       ))}
+
+      {/* OCR生テキスト（デバッグ用） */}
+      {data.rawText ? (
+        <View style={styles.rawSection}>
+          <TouchableOpacity
+            style={styles.rawToggle}
+            onPress={() => setShowRaw((v: boolean) => !v)}>
+            <Text style={styles.rawToggleText}>
+              {showRaw ? '▲ OCR生テキストを隠す' : '▼ OCR生テキストを確認する'}
+            </Text>
+          </TouchableOpacity>
+          {showRaw && (
+            <Text style={styles.rawText} selectable>
+              {data.rawText}
+            </Text>
+          )}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -79,5 +100,29 @@ const styles = StyleSheet.create({
   inputMulti: {
     minHeight: 72,
     textAlignVertical: 'top',
+  },
+  rawSection: {
+    marginTop: 8,
+    marginBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    paddingTop: 12,
+  },
+  rawToggle: {
+    paddingVertical: 8,
+  },
+  rawToggleText: {
+    fontSize: 13,
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  rawText: {
+    fontSize: 12,
+    color: '#555',
+    lineHeight: 18,
+    marginTop: 8,
+    padding: 10,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 6,
   },
 });
