@@ -24,6 +24,7 @@ const EMPTY_KARTE: KarteData = {
   patientName: '',
   birthDate: '',
   gender: '',
+  address: '',
   diagnosis: '',
   doctor: '',
   prescription: '',
@@ -43,7 +44,7 @@ export default function App() {
 
       setPageImages(result.pageImages);
       if (mode === 'ocr') {
-        const parsed = parseKarteText(result.texts);
+        const parsed = parseKarteText(result.texts, result.personNames, result.placeNames);
         setKarteData(parsed);
         setAppState('review');
       } else {

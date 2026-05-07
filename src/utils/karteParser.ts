@@ -84,14 +84,38 @@ function extractPrescription(lines: string[]): string {
   return extractAfterKeyword(lines, keywords);
 }
 
+// 住所の抽出（キーワードマッチ → 正規表現 → NLTagger地名フォールバック）
+function extractAddress(lines: string[], fullText: string, placeNames: string[]): string {
+  const byKeyword = extractAfterKeyword(lines, ['住所', '住居', 'ご住所', '居住地', '現住所', '連絡先住所']);
+  if (byKeyword) return byKeyword;
+
+  // 〒xxx-xxxx から始まる住所パターン
+  const postalMatch = fullText.match(/〒?\d{3}[-－]\d{4}[\s\S]{1,60}?(?=[(\r\n]|$)/m);
+  if (postalMatch) return postalMatch[0].trim();
+
+  // 都道府県から始まる住所パターン
+  const prefMatch = fullText.match(/[東京都大阪府京都府北海道][^\n]{4,40}[町村丁目号棟]/);
+  if (prefMatch) return prefMatch[0].trim();
+
+  // NLTagger の地名候補をフォールバックとして使用
+  return placeNames.join(' ');
+}
+
 // メイン解析関数
-export function parseKarteText(rawTexts: string[]): KarteData {
+export function parseKarteText(
+  rawTexts: string[],
+  personNames: string[] = [],
+  placeNames: string[] = [],
+): KarteData {
   const fullText = rawTexts.join('\n');
   const lines = rawTexts.map(t => t.trim()).filter(Boolean);
 
-  const patientName = extractAfterKeyword(lines, ['氏名', '患者名', '患者氏名', '名前', 'Name']);
+  const nameByKeyword = extractAfterKeyword(lines, ['氏名', '患者名', '患者氏名', '名前', 'Name']);
+  const patientName = nameByKeyword || personNames[0] || '';
+
   const birthDate = extractBirthDate(fullText);
   const gender = extractGender(fullText);
+  const address = extractAddress(lines, fullText, placeNames);
   const diagnosis = extractDiagnosis(lines);
   const doctor = extractAfterKeyword(lines, ['担当医', '主治医', '医師名', '担当医師', 'Dr.']);
   const prescription = extractPrescription(lines);
@@ -100,6 +124,7 @@ export function parseKarteText(rawTexts: string[]): KarteData {
     patientName,
     birthDate,
     gender,
+    address,
     diagnosis,
     doctor,
     prescription,

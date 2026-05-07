@@ -17,6 +17,7 @@ const FIELDS: { key: keyof KarteData; label: string; multiline?: boolean }[] = [
   { key: 'patientName', label: '氏名' },
   { key: 'birthDate', label: '生年月日' },
   { key: 'gender', label: '性別' },
+  { key: 'address', label: '住所', multiline: true },
   { key: 'diagnosis', label: '病名', multiline: true },
   { key: 'doctor', label: '担当医' },
   { key: 'prescription', label: '処方装具名', multiline: true },
@@ -36,7 +37,7 @@ export function KarteForm({ data, onChange }: Props) {
           <TextInput
             style={[styles.input, multiline && styles.inputMulti]}
             value={data[key]}
-            onChangeText={v => handleChange(key, v)}
+            onChangeText={(v: string) => handleChange(key, v)}
             placeholder={`${label}を入力`}
             placeholderTextColor="#aaa"
             multiline={multiline}

@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import VisionKit
 import Vision
+import NaturalLanguage
 
 // MARK: - DocumentScannerModule
 @objc(DocumentScannerModule)
@@ -65,6 +66,31 @@ class DocumentScannerModule: NSObject {
     }
   }
 
+  // MARK: - NLTaggerで人名・地名候補を抽出
+  private func extractNamedEntities(from text: String) -> (personNames: [String], placeNames: [String]) {
+    let tagger = NLTagger(tagSchemes: [.nameType])
+    tagger.string = text
+
+    var personNames: [String] = []
+    var placeNames: [String] = []
+    let options: NLTagger.Options = [.omitWhitespace, .omitPunctuation, .joinNames]
+
+    tagger.enumerateTags(in: text.startIndex..<text.endIndex,
+                         unit: .word,
+                         scheme: .nameType,
+                         options: options) { tag, range in
+      let value = String(text[range]).trimmingCharacters(in: .whitespaces)
+      guard !value.isEmpty else { return true }
+      if tag == .personalName, !personNames.contains(value) {
+        personNames.append(value)
+      } else if tag == .placeName, !placeNames.contains(value) {
+        placeNames.append(value)
+      }
+      return true
+    }
+    return (personNames, placeNames)
+  }
+
   // MARK: - 画像をBase64へ変換
   private func imageToBase64(_ image: UIImage) -> String {
     guard let data = image.jpegData(compressionQuality: 0.9) else { return "" }
@@ -98,10 +124,14 @@ extension DocumentScannerModule: VNDocumentCameraViewControllerDelegate {
     }
 
     group.notify(queue: .main) {
+      let fullText = allTexts.joined(separator: "\n")
+      let entities = self.extractNamedEntities(from: fullText)
       let result: [String: Any] = [
         "texts": allTexts,
         "pageImages": pageImages,
-        "pageCount": scan.pageCount
+        "pageCount": scan.pageCount,
+        "personNames": entities.personNames,
+        "placeNames": entities.placeNames,
       ]
       self.resolve?(result)
     }
