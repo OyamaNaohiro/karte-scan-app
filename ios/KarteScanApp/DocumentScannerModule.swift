@@ -55,10 +55,14 @@ class DocumentScannerModule: NSObject {
     }
 
     // 日本語 + 英語を高精度で認識
+    // usesLanguageCorrection は日本語を誤修正して文字が消えるため無効化
     request.recognitionLanguages = ["ja-JP", "en-US"]
     request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = true
+    request.usesLanguageCorrection = false
     request.minimumTextHeight = 0.01
+    if #available(iOS 16.0, *) {
+      request.automaticallyDetectsLanguage = true
+    }
 
     let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
     DispatchQueue.global(qos: .userInitiated).async {
