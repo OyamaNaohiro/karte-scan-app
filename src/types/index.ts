@@ -2,8 +2,9 @@ export interface ScanResult {
   texts: string[];
   pageImages: string[]; // base64エンコード済みJPEG
   pageCount: number;
-  personNames: string[]; // NLTaggerで検出した人名候補
-  placeNames: string[];  // NLTaggerで検出した地名候補
+  personNames: string[];      // NLTaggerで検出した人名候補
+  placeNames: string[];       // NLTaggerで検出した地名候補
+  organizationNames: string[]; // NLTaggerで検出した組織名候補
 }
 
 export interface KarteData {
@@ -11,6 +12,7 @@ export interface KarteData {
   birthDate: string;
   gender: string;
   address: string;
+  hospitalName: string;
   diagnosis: string;
   doctor: string;
   prescription: string;

@@ -67,12 +67,13 @@ class DocumentScannerModule: NSObject {
   }
 
   // MARK: - NLTaggerで人名・地名候補を抽出
-  private func extractNamedEntities(from text: String) -> (personNames: [String], placeNames: [String]) {
+  private func extractNamedEntities(from text: String) -> (personNames: [String], placeNames: [String], organizationNames: [String]) {
     let tagger = NLTagger(tagSchemes: [.nameType])
     tagger.string = text
 
     var personNames: [String] = []
     var placeNames: [String] = []
+    var organizationNames: [String] = []
     let options: NLTagger.Options = [.omitWhitespace, .omitPunctuation, .joinNames]
 
     tagger.enumerateTags(in: text.startIndex..<text.endIndex,
@@ -85,10 +86,12 @@ class DocumentScannerModule: NSObject {
         personNames.append(value)
       } else if tag == .placeName, !placeNames.contains(value) {
         placeNames.append(value)
+      } else if tag == .organizationName, !organizationNames.contains(value) {
+        organizationNames.append(value)
       }
       return true
     }
-    return (personNames, placeNames)
+    return (personNames, placeNames, organizationNames)
   }
 
   // MARK: - 画像をBase64へ変換
@@ -132,6 +135,7 @@ extension DocumentScannerModule: VNDocumentCameraViewControllerDelegate {
         "pageCount": scan.pageCount,
         "personNames": entities.personNames,
         "placeNames": entities.placeNames,
+        "organizationNames": entities.organizationNames,
       ]
       self.resolve?(result)
     }

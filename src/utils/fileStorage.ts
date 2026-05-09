@@ -36,6 +36,7 @@ function buildHtml(karteData: KarteData, pageImages: string[]): string {
     <tr><td>生年月日</td><td>${karteData.birthDate || '—'}</td></tr>
     <tr><td>性別</td><td>${karteData.gender || '—'}</td></tr>
     <tr><td>住所</td><td>${karteData.address || '—'}</td></tr>
+    <tr><td>病院名</td><td>${karteData.hospitalName || '—'}</td></tr>
     <tr><td>病名</td><td>${karteData.diagnosis || '—'}</td></tr>
     <tr><td>担当医</td><td>${karteData.doctor || '—'}</td></tr>
     <tr><td>処方装具名</td><td>${karteData.prescription || '—'}</td></tr>
@@ -113,7 +114,7 @@ export async function savePdfOnly(pageImages: string[]): Promise<SavedRecord> {
 
   const emptyKarte: KarteData = {
     patientName: '', birthDate: '', gender: '', address: '',
-    diagnosis: '', doctor: '', prescription: '', rawText: '',
+    hospitalName: '', diagnosis: '', doctor: '', prescription: '', rawText: '',
   };
   const record: SavedRecord = {
     id,

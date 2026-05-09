@@ -19,6 +19,7 @@ const FIELDS: { key: keyof KarteData; label: string; multiline?: boolean }[] = [
   { key: 'birthDate', label: '生年月日' },
   { key: 'gender', label: '性別' },
   { key: 'address', label: '住所', multiline: true },
+  { key: 'hospitalName', label: '病院名' },
   { key: 'diagnosis', label: '病名', multiline: true },
   { key: 'doctor', label: '担当医' },
   { key: 'prescription', label: '処方装具名', multiline: true },
