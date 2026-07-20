@@ -14,7 +14,7 @@ import {
 import { DocumentScanner } from './utils/DocumentScanner';
 import { parseKarteText } from './utils/karteParser';
 import { saveRecord, savePdfOnly } from './utils/fileStorage';
-import { KarteForm } from './components/KarteForm';
+import { KarteForm, NerCandidates } from './components/KarteForm';
 import { KarteData } from './types';
 
 type AppState = 'idle' | 'scanning' | 'review' | 'pdf-review' | 'saving' | 'done';
@@ -37,6 +37,11 @@ export default function App() {
   const [karteData, setKarteData] = useState<KarteData>(EMPTY_KARTE);
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [savedPdfPath, setSavedPdfPath] = useState('');
+  const [ner, setNer] = useState<NerCandidates>({
+    personNames: [],
+    placeNames: [],
+    organizationNames: [],
+  });
 
   async function handleScan(mode: ScanMode) {
     try {
@@ -47,6 +52,11 @@ export default function App() {
       if (mode === 'ocr') {
         const parsed = parseKarteText(result.texts, result.personNames, result.placeNames, result.organizationNames);
         setKarteData(parsed);
+        setNer({
+          personNames: result.personNames,
+          placeNames: result.placeNames,
+          organizationNames: result.organizationNames,
+        });
         setAppState('review');
       } else {
         setAppState('pdf-review');
@@ -87,6 +97,7 @@ export default function App() {
     setKarteData(EMPTY_KARTE);
     setPageImages([]);
     setSavedPdfPath('');
+    setNer({ personNames: [], placeNames: [], organizationNames: [] });
     setAppState('idle');
   }
 
@@ -141,7 +152,7 @@ export default function App() {
             <ScrollView
               style={styles.flex}
               contentContainerStyle={styles.formContent}>
-              <KarteForm data={karteData} onChange={setKarteData} />
+              <KarteForm data={karteData} onChange={setKarteData} ner={ner} />
               {pageImages.length > 0 && (
                 <View style={styles.previewSection}>
                   <Text style={styles.previewTitle}>スキャン画像プレビュー</Text>

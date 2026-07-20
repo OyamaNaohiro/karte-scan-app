@@ -9,9 +9,16 @@ import {
 } from 'react-native';
 import { KarteData } from '../types';
 
+export interface NerCandidates {
+  personNames: string[];
+  placeNames: string[];
+  organizationNames: string[];
+}
+
 interface Props {
   data: KarteData;
   onChange: (updated: KarteData) => void;
+  ner?: NerCandidates;
 }
 
 const FIELDS: { key: keyof KarteData; label: string; multiline?: boolean }[] = [
@@ -25,8 +32,9 @@ const FIELDS: { key: keyof KarteData; label: string; multiline?: boolean }[] = [
   { key: 'prescription', label: '処方装具名', multiline: true },
 ];
 
-export function KarteForm({ data, onChange }: Props) {
+export function KarteForm({ data, onChange, ner }: Props) {
   const [showRaw, setShowRaw] = useState(false);
+  const [showParsed, setShowParsed] = useState(false);
 
   function handleChange(key: keyof KarteData, value: string) {
     onChange({ ...data, [key]: value });
@@ -48,6 +56,69 @@ export function KarteForm({ data, onChange }: Props) {
           />
         </View>
       ))}
+
+      {/* 分類結果（デバッグ用） */}
+      <View style={styles.rawSection}>
+        <TouchableOpacity
+          style={styles.rawToggle}
+          onPress={() => setShowParsed((v: boolean) => !v)}>
+          <Text style={styles.rawToggleText}>
+            {showParsed ? '▲ 分類結果を隠す' : '▼ 分類結果を確認する'}
+          </Text>
+        </TouchableOpacity>
+        {showParsed && (
+          <View style={styles.parsedBox}>
+            {FIELDS.map(({ key, label }) => (
+              <View key={key} style={styles.parsedRow}>
+                <Text style={styles.parsedLabel}>{label}</Text>
+                <Text
+                  style={[styles.parsedValue, !data[key] && styles.parsedEmpty]}
+                  selectable>
+                  {data[key] || '未検出'}
+                </Text>
+              </View>
+            ))}
+            {ner && (
+              <>
+                <Text style={styles.parsedSubTitle}>NER候補</Text>
+                <View style={styles.parsedRow}>
+                  <Text style={styles.parsedLabel}>人名</Text>
+                  <Text
+                    style={[
+                      styles.parsedValue,
+                      !ner.personNames.length && styles.parsedEmpty,
+                    ]}
+                    selectable>
+                    {ner.personNames.join('、') || '未検出'}
+                  </Text>
+                </View>
+                <View style={styles.parsedRow}>
+                  <Text style={styles.parsedLabel}>地名</Text>
+                  <Text
+                    style={[
+                      styles.parsedValue,
+                      !ner.placeNames.length && styles.parsedEmpty,
+                    ]}
+                    selectable>
+                    {ner.placeNames.join('、') || '未検出'}
+                  </Text>
+                </View>
+                <View style={styles.parsedRow}>
+                  <Text style={styles.parsedLabel}>組織名</Text>
+                  <Text
+                    style={[
+                      styles.parsedValue,
+                      !ner.organizationNames.length && styles.parsedEmpty,
+                    ]}
+                    selectable>
+                    {ner.organizationNames.join('、') || '未検出'}
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+        )}
+      </View>
 
       {/* OCR生テキスト（デバッグ用） */}
       {data.rawText ? (
@@ -116,6 +187,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#2563EB',
     fontWeight: '600',
+  },
+  parsedBox: {
+    marginTop: 8,
+    padding: 12,
+    backgroundColor: '#f5f7fa',
+    borderRadius: 6,
+  },
+  parsedRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  parsedLabel: {
+    width: 88,
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
+  },
+  parsedValue: {
+    flex: 1,
+    fontSize: 13,
+    color: '#111',
+    lineHeight: 19,
+  },
+  parsedEmpty: {
+    color: '#c00',
+    fontStyle: 'italic',
+  },
+  parsedSubTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#444',
+    marginTop: 4,
+    marginBottom: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e6ec',
   },
   rawText: {
     fontSize: 12,
