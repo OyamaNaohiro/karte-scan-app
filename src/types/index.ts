@@ -19,6 +19,17 @@ export interface KarteData {
   rawText: string;
 }
 
+// 編集対象フィールド（rawText を除いた KarteData のキー）
+export type KarteField = Exclude<keyof KarteData, 'rawText'>;
+
+// 項目ごとの抽出候補。先頭が採用値（KarteData に入っている値）
+export type KarteCandidates = Record<KarteField, string[]>;
+
+export interface ParseResult {
+  data: KarteData;
+  candidates: KarteCandidates;
+}
+
 export interface SavedRecord {
   id: string;
   karteData: KarteData;

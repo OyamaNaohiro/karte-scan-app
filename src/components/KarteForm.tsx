@@ -7,7 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { KarteData } from '../types';
+import { KarteData, KarteField, KarteCandidates } from '../types';
 
 export interface NerCandidates {
   personNames: string[];
@@ -18,10 +18,11 @@ export interface NerCandidates {
 interface Props {
   data: KarteData;
   onChange: (updated: KarteData) => void;
+  candidates?: KarteCandidates;
   ner?: NerCandidates;
 }
 
-const FIELDS: { key: keyof KarteData; label: string; multiline?: boolean }[] = [
+const FIELDS: { key: KarteField; label: string; multiline?: boolean }[] = [
   { key: 'patientName', label: '氏名' },
   { key: 'birthDate', label: '生年月日' },
   { key: 'gender', label: '性別' },
@@ -32,30 +33,61 @@ const FIELDS: { key: keyof KarteData; label: string; multiline?: boolean }[] = [
   { key: 'prescription', label: '処方装具名', multiline: true },
 ];
 
-export function KarteForm({ data, onChange, ner }: Props) {
+export function KarteForm({ data, onChange, candidates, ner }: Props) {
   const [showRaw, setShowRaw] = useState(false);
   const [showParsed, setShowParsed] = useState(false);
 
-  function handleChange(key: keyof KarteData, value: string) {
+  function handleChange(key: KarteField, value: string) {
     onChange({ ...data, [key]: value });
   }
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.sectionTitle}>抽出データの確認・修正</Text>
-      {FIELDS.map(({ key, label, multiline }) => (
-        <View key={key} style={styles.fieldRow}>
-          <Text style={styles.label}>{label}</Text>
-          <TextInput
-            style={[styles.input, multiline && styles.inputMulti]}
-            value={data[key]}
-            onChangeText={(v: string) => handleChange(key, v)}
-            placeholder={`${label}を入力`}
-            placeholderTextColor="#aaa"
-            multiline={multiline}
-          />
-        </View>
-      ))}
+      {FIELDS.map(({ key, label, multiline }) => {
+        const options = candidates?.[key] ?? [];
+        return (
+          <View key={key} style={styles.fieldRow}>
+            <Text style={styles.label}>{label}</Text>
+            <TextInput
+              style={[styles.input, multiline && styles.inputMulti]}
+              value={data[key]}
+              onChangeText={(v: string) => handleChange(key, v)}
+              placeholder={`${label}を入力`}
+              placeholderTextColor="#aaa"
+              multiline={multiline}
+            />
+            {/* 同じ項目に複数の候補があるときだけ選択肢を出す */}
+            {options.length > 1 && (
+              <View style={styles.chipSection}>
+                <Text style={styles.chipHint}>
+                  候補が{options.length}件あります。タップで切り替え
+                </Text>
+                <View style={styles.chipRow}>
+                  {options.map((opt: string, i: number) => {
+                    const selected = data[key] === opt;
+                    return (
+                      <TouchableOpacity
+                        key={`${key}-${i}`}
+                        style={[styles.chip, selected && styles.chipSelected]}
+                        onPress={() => handleChange(key, opt)}>
+                        <Text
+                          style={[
+                            styles.chipText,
+                            selected && styles.chipTextSelected,
+                          ]}
+                          numberOfLines={2}>
+                          {opt}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+          </View>
+        );
+      })}
 
       {/* 分類結果（デバッグ用） */}
       <View style={styles.rawSection}>
@@ -172,6 +204,40 @@ const styles = StyleSheet.create({
   inputMulti: {
     minHeight: 72,
     textAlignVertical: 'top',
+  },
+  chipSection: {
+    marginTop: 8,
+  },
+  chipHint: {
+    fontSize: 11,
+    color: '#888',
+    marginBottom: 6,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    maxWidth: '100%',
+    borderWidth: 1,
+    borderColor: '#c7d2e0',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  chipSelected: {
+    borderColor: '#2563EB',
+    backgroundColor: '#e8f0fe',
+  },
+  chipText: {
+    fontSize: 13,
+    color: '#444',
+  },
+  chipTextSelected: {
+    color: '#1d4ed8',
+    fontWeight: '700',
   },
   rawSection: {
     marginTop: 8,

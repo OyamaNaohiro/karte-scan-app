@@ -15,7 +15,7 @@ import { DocumentScanner } from './utils/DocumentScanner';
 import { parseKarteText } from './utils/karteParser';
 import { saveRecord, savePdfOnly } from './utils/fileStorage';
 import { KarteForm, NerCandidates } from './components/KarteForm';
-import { KarteData } from './types';
+import { KarteData, KarteCandidates } from './types';
 
 type AppState = 'idle' | 'scanning' | 'review' | 'pdf-review' | 'saving' | 'done';
 type ScanMode = 'ocr' | 'pdf';
@@ -32,9 +32,21 @@ const EMPTY_KARTE: KarteData = {
   rawText: '',
 };
 
+const EMPTY_CANDIDATES: KarteCandidates = {
+  patientName: [],
+  birthDate: [],
+  gender: [],
+  address: [],
+  hospitalName: [],
+  diagnosis: [],
+  doctor: [],
+  prescription: [],
+};
+
 export default function App() {
   const [appState, setAppState] = useState<AppState>('idle');
   const [karteData, setKarteData] = useState<KarteData>(EMPTY_KARTE);
+  const [candidates, setCandidates] = useState<KarteCandidates>(EMPTY_CANDIDATES);
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [savedPdfPath, setSavedPdfPath] = useState('');
   const [ner, setNer] = useState<NerCandidates>({
@@ -51,7 +63,8 @@ export default function App() {
       setPageImages(result.pageImages);
       if (mode === 'ocr') {
         const parsed = parseKarteText(result.texts, result.personNames, result.placeNames, result.organizationNames);
-        setKarteData(parsed);
+        setKarteData(parsed.data);
+        setCandidates(parsed.candidates);
         setNer({
           personNames: result.personNames,
           placeNames: result.placeNames,
@@ -95,6 +108,7 @@ export default function App() {
 
   function handleReset() {
     setKarteData(EMPTY_KARTE);
+    setCandidates(EMPTY_CANDIDATES);
     setPageImages([]);
     setSavedPdfPath('');
     setNer({ personNames: [], placeNames: [], organizationNames: [] });
@@ -152,7 +166,12 @@ export default function App() {
             <ScrollView
               style={styles.flex}
               contentContainerStyle={styles.formContent}>
-              <KarteForm data={karteData} onChange={setKarteData} ner={ner} />
+              <KarteForm
+                data={karteData}
+                onChange={setKarteData}
+                candidates={candidates}
+                ner={ner}
+              />
               {pageImages.length > 0 && (
                 <View style={styles.previewSection}>
                   <Text style={styles.previewTitle}>スキャン画像プレビュー</Text>
