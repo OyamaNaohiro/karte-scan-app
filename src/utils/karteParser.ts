@@ -93,7 +93,8 @@ function trimNameValue(raw: string): string {
 // - ラベル語・記号を含むものは除外
 const NAME_STOP_WORDS = [
   '氏名', '名前', '患者', '生年', '月日', '住所', '病名', '診断',
-  '担当', '医師', '主治', '性別', '病院', 'クリニック', '医院',
+  '担当', '医師', '主治', '性別', '男性', '女性', '不明',
+  '病院', 'クリニック', '医院', '装具', '指示', '番号',
 ];
 function isValidName(raw: string): boolean {
   const s = cleanName(raw);
@@ -103,6 +104,22 @@ function isValidName(raw: string): boolean {
   if (/(昭和|平成|令和|大正|明治)/.test(s)) return false; // 和暦
   if (NAME_STOP_WORDS.some(w => s.includes(w))) return false;
   return true;
+}
+
+// 生年月日らしい行かどうか
+const BIRTHDATE_LINE = /(?:昭和|平成|令和|大正|明治)\s*\d{1,2}\s*年|\d{4}\s*[年\/\-]\s*\d{1,2}\s*[月\/\-]/;
+
+// 生年月日行の前後行を氏名候補として拾う
+// ラベルと値が離れた表形式カルテ（"氏名"ラベルの下に別ラベルが続く）対策。
+// カルテでは「氏名 → 生年月日」の並びが多く、生年月日行の直前が氏名であることが多い。
+function extractNamesNearBirthDate(lines: string[]): string[] {
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!BIRTHDATE_LINE.test(lines[i])) continue;
+    if (i - 1 >= 0) found.push(lines[i - 1]);
+    if (i + 1 < lines.length) found.push(lines[i + 1]);
+  }
+  return found;
 }
 
 // キーワード行かどうか判定
@@ -207,11 +224,46 @@ function splitDiagnosisAndDevice(raw: string): { diagnosis: string; device: stri
   return { diagnosis: raw, device: '' };
 }
 
-// 処方装具名の抽出（明示キーワード優先 → 病名行からの分離）
+// 装具名らしい行を判定するためのマーカー語（診断分離用の DEVICE_KEYWORDS より広め）
+// この病院の書類のように装具の選択肢が列挙され○で囲む形式に対応するため、
+// 装具名らしい行はすべて候補として拾う（どれが処方されたかはOCRでは判別できない）。
+const ORTHOSIS_MARKERS = [
+  '装具', 'コルセット', 'カラー', 'ブレース', 'サポート', 'スリング',
+  'ウエッジ', 'サポーター', 'シーネ', 'スプリント', 'インソール',
+  '補高', 'サポート', 'ウルトラ',
+];
+// ヘッダー・会社名など装具名ではない行を除外する語
+const ORTHOSIS_EXCLUDE = ['種類', '指示', '依頼', '伝票', '義肢'];
+
+// 装具名の前後の記号・囲み文字を除去
+function cleanDeviceName(line: string): string {
+  return line
+    .replace(/^[（(「『【\s]+/, '')
+    .replace(/[（(）)「『」』【】、。・"“”½\s]+$/, '')
+    .trim();
+}
+
+// 書類全体から装具名らしい行を候補として収集
+function extractDeviceCandidates(lines: string[]): string[] {
+  const found: string[] = [];
+  for (const line of lines) {
+    if (!ORTHOSIS_MARKERS.some(m => line.includes(m))) continue;
+    if (ORTHOSIS_EXCLUDE.some(w => line.includes(w))) continue;
+    const name = cleanDeviceName(line);
+    if (name.length >= 3 && name.length <= 30) found.push(name);
+  }
+  return uniq(found);
+}
+
+// 処方装具名の抽出（明示キーワード → 病名行からの分離 → 書類全体の装具名候補）
 function extractPrescriptions(lines: string[], devicesFromDiagnosis: string[]): string[] {
   // "装具" 単体は "装具依頼伝票" などに誤マッチするため除外し、より具体的なキーワードのみ使用
   const byKeyword = extractAllAfterKeyword(lines, ['処方装具名', '処方装具', '用具名', '補助具名']);
-  return uniq([...byKeyword, ...devicesFromDiagnosis]);
+  return uniq([
+    ...byKeyword,
+    ...devicesFromDiagnosis,
+    ...extractDeviceCandidates(lines),
+  ]);
 }
 
 // 住所の抽出
@@ -273,6 +325,7 @@ export function parseKarteText(
     [
       ...extractAllAfterKeyword(lines, ['患者氏名', '患者名', '氏名', '名前', 'Name']),
       ...personNames,
+      ...extractNamesNearBirthDate(lines),
     ]
       .map(trimNameValue)
       .map(cleanName)
