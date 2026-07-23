@@ -65,6 +65,28 @@ function cleanName(raw: string): string {
   return s;
 }
 
+// 氏名の値から、後続ラベル・日付以降を切り捨てて名前部分だけを取り出す
+// 例: "大渕 久子 生年月日 昭和20年…" → "大渕 久子"
+// OCRが1行にまとめて認識した長い行でも名前だけを拾えるようにする
+const NAME_CUT_WORDS = [
+  '生年月日', '生年', '年齢', '性別', '住所', '電話', 'TEL', '病名',
+  '診断', '担当', '主治', '医師', '患者', 'ID', 'カルテ', '様',
+];
+function trimNameValue(raw: string): string {
+  let s = raw.trim();
+  let end = s.length;
+  for (const w of NAME_CUT_WORDS) {
+    const i = s.indexOf(w);
+    if (i > 0 && i < end) end = i;
+  }
+  // 数字・和暦が現れたらそこで切る
+  const dateMatch = s.slice(0, end).match(/[0-9０-９]|昭和|平成|令和|大正|明治/);
+  if (dateMatch && dateMatch.index !== undefined && dateMatch.index > 0) {
+    end = Math.min(end, dateMatch.index);
+  }
+  return s.slice(0, end).trim();
+}
+
 // 氏名として妥当か判定
 // - 2〜12文字（「尾崎進」のような3文字名も許可）
 // - 数字を含むもの（生年月日など）は除外
@@ -252,6 +274,7 @@ export function parseKarteText(
       ...extractAllAfterKeyword(lines, ['患者氏名', '患者名', '氏名', '名前', 'Name']),
       ...personNames,
     ]
+      .map(trimNameValue)
       .map(cleanName)
       .filter(isValidName),
   );
