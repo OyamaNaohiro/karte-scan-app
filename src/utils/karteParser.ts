@@ -50,6 +50,39 @@ function extractAllAfterKeyword(lines: string[], keywords: string[]): string[] {
   return uniq(found);
 }
 
+// 氏名の敬称（末尾から除去する）
+const HONORIFICS = ['様', 'さま', 'サマ', 'さん', '殿', 'どの', '君', 'ちゃん'];
+
+// 氏名候補の整形（敬称・前後の記号を除去）
+function cleanName(raw: string): string {
+  let s = raw.trim().replace(/^[（(]|[）)]$/g, '').trim();
+  for (const h of HONORIFICS) {
+    if (s.endsWith(h)) {
+      s = s.slice(0, -h.length).trim();
+      break;
+    }
+  }
+  return s;
+}
+
+// 氏名として妥当か判定
+// - 2〜12文字（「尾崎進」のような3文字名も許可）
+// - 数字を含むもの（生年月日など）は除外
+// - ラベル語・記号を含むものは除外
+const NAME_STOP_WORDS = [
+  '氏名', '名前', '患者', '生年', '月日', '住所', '病名', '診断',
+  '担当', '医師', '主治', '性別', '病院', 'クリニック', '医院',
+];
+function isValidName(raw: string): boolean {
+  const s = cleanName(raw);
+  if (s.length < 2 || s.length > 12) return false;
+  if (/[0-9０-９]/.test(s)) return false; // 数字を含む＝生年月日・番号など
+  if (/[：:／\/|｜\-]/.test(s)) return false;
+  if (/(昭和|平成|令和|大正|明治)/.test(s)) return false; // 和暦
+  if (NAME_STOP_WORDS.some(w => s.includes(w))) return false;
+  return true;
+}
+
 // キーワード行かどうか判定
 function isKeywordLine(line: string): boolean {
   // "住所 ..." "病名：..." など
@@ -213,10 +246,15 @@ export function parseKarteText(
   const fullText = rawTexts.join('\n');
   const lines = rawTexts.map(t => t.trim()).filter(Boolean);
 
-  const patientNames = uniq([
-    ...extractAllAfterKeyword(lines, ['患者氏名', '患者名', '氏名', '名前', 'Name']),
-    ...personNames,
-  ]);
+  // キーワード抽出とNER人名を統合し、敬称除去・妥当性チェックで絞り込む
+  const patientNames = uniq(
+    [
+      ...extractAllAfterKeyword(lines, ['患者氏名', '患者名', '氏名', '名前', 'Name']),
+      ...personNames,
+    ]
+      .map(cleanName)
+      .filter(isValidName),
+  );
 
   const birthDates = extractBirthDates(fullText);
   const genders = extractGenders(fullText);

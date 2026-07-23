@@ -100,16 +100,29 @@ export function KarteForm({ data, onChange, candidates, ner }: Props) {
         </TouchableOpacity>
         {showParsed && (
           <View style={styles.parsedBox}>
-            {FIELDS.map(({ key, label }) => (
-              <View key={key} style={styles.parsedRow}>
-                <Text style={styles.parsedLabel}>{label}</Text>
-                <Text
-                  style={[styles.parsedValue, !data[key] && styles.parsedEmpty]}
-                  selectable>
-                  {data[key] || '未検出'}
-                </Text>
-              </View>
-            ))}
+            {FIELDS.map(({ key, label }) => {
+              const options = candidates?.[key] ?? [];
+              return (
+                <View key={key} style={styles.parsedRow}>
+                  <Text style={styles.parsedLabel}>{label}</Text>
+                  <View style={styles.parsedValueCol}>
+                    <Text
+                      style={[
+                        styles.parsedValue,
+                        !data[key] && styles.parsedEmpty,
+                      ]}
+                      selectable>
+                      {data[key] || '未検出'}
+                    </Text>
+                    {options.length > 1 && (
+                      <Text style={styles.parsedCandidates} selectable>
+                        候補{options.length}件: {options.join(' / ')}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
             {ner && (
               <>
                 <Text style={styles.parsedSubTitle}>NER候補</Text>
@@ -271,11 +284,19 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '600',
   },
-  parsedValue: {
+  parsedValueCol: {
     flex: 1,
+  },
+  parsedValue: {
     fontSize: 13,
     color: '#111',
     lineHeight: 19,
+  },
+  parsedCandidates: {
+    fontSize: 11,
+    color: '#2563EB',
+    lineHeight: 16,
+    marginTop: 2,
   },
   parsedEmpty: {
     color: '#c00',
