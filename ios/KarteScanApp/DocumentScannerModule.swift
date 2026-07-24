@@ -48,10 +48,13 @@ class DocumentScannerModule: NSObject {
         return
       }
 
-      let texts = observations.compactMap { obs -> String? in
-        obs.topCandidates(1).first?.string
+      // 各observationの文字列と座標(boundingBox)を取り出す
+      let frags: [(text: String, box: CGRect)] = observations.compactMap { obs in
+        guard let s = obs.topCandidates(1).first?.string else { return nil }
+        return (s, obs.boundingBox)
       }
-      completion(texts)
+
+      completion(self.reconstructLines(from: frags))
     }
 
     // 日本語 + 英語を高精度で認識
@@ -63,6 +66,39 @@ class DocumentScannerModule: NSObject {
     let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
     DispatchQueue.global(qos: .userInitiated).async {
       try? handler.perform([request])
+    }
+  }
+
+  // MARK: - boundingBoxから視覚的な行を再構成
+  // Visionはラベルと値が全角スペース等で離れていると別observationに分割し、
+  // 返却順が列優先になって「ラベル群→値群」に崩れることがある。
+  // 縦位置(Y)が近いフラグメントを同一行にまとめ、横位置(X)順に並べ直すことで
+  // 「患者氏名 阿部 久美子」のように本来の1行を復元する。
+  // 注: Visionの座標系は左下原点・正規化(0〜1)、Yは上ほど大きい。
+  private func reconstructLines(from frags: [(text: String, box: CGRect)]) -> [String] {
+    guard !frags.isEmpty else { return [] }
+
+    // 上から下へ（midYの降順）
+    let sorted = frags.sorted { $0.box.midY > $1.box.midY }
+
+    var rows: [[(text: String, box: CGRect)]] = []
+    for f in sorted {
+      if let last = rows.last, let ref = last.first {
+        // 同一行判定: 縦位置の差が行高さの6割未満なら同じ行とみなす
+        let tol = max(ref.box.height, f.box.height) * 0.6
+        if abs(f.box.midY - ref.box.midY) < tol {
+          rows[rows.count - 1].append(f)
+          continue
+        }
+      }
+      rows.append([f])
+    }
+
+    // 各行を左→右（minXの昇順）に並べ、スペース区切りで結合
+    return rows.map { row in
+      row.sorted { $0.box.minX < $1.box.minX }
+        .map { $0.text }
+        .joined(separator: " ")
     }
   }
 
