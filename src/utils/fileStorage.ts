@@ -1,6 +1,7 @@
 import RNFS from 'react-native-fs';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import { KarteData, SavedRecord } from '../types';
+import { insertRecord, getAllRecords } from './db';
 
 const RECORDS_DIR = `${RNFS.DocumentDirectoryPath}/karteRecords`;
 
@@ -47,6 +48,35 @@ function buildHtml(karteData: KarteData, pageImages: string[]): string {
 </html>`;
 }
 
+// スキャン画像(base64)をJPEGファイルとして保存し、絶対パス配列を返す
+async function savePageImages(id: string, pageImages: string[]): Promise<string[]> {
+  const paths: string[] = [];
+  for (let i = 0; i < pageImages.length; i++) {
+    const path = `${RECORDS_DIR}/${id}_p${i + 1}.jpg`;
+    await RNFS.writeFile(path, pageImages[i], 'base64');
+    paths.push(path);
+  }
+  return paths;
+}
+
+// PDFを生成して所定パスへ配置する
+async function generatePdf(
+  id: string,
+  html: string,
+  pdfPath: string,
+): Promise<void> {
+  const pdf = await RNHTMLtoPDF.convert({
+    html,
+    fileName: id,
+    directory: RECORDS_DIR,
+    base64: false,
+  });
+  if (!pdf.filePath) throw new Error('PDF生成に失敗しました');
+  if (pdf.filePath !== pdfPath) {
+    await RNFS.moveFile(pdf.filePath, pdfPath);
+  }
+}
+
 export async function saveRecord(
   karteData: KarteData,
   pageImages: string[],
@@ -55,33 +85,18 @@ export async function saveRecord(
 
   const id = `karte_${Date.now()}`;
   const pdfPath = `${RECORDS_DIR}/${id}.pdf`;
-  const metaPath = `${RECORDS_DIR}/${id}.json`;
 
-  // PDF生成
-  const html = buildHtml(karteData, pageImages);
-  const pdf = await RNHTMLtoPDF.convert({
-    html,
-    fileName: id,
-    directory: RECORDS_DIR,
-    base64: false,
-  });
+  const imagePaths = await savePageImages(id, pageImages);
+  await generatePdf(id, buildHtml(karteData, pageImages), pdfPath);
 
-  if (!pdf.filePath) throw new Error('PDF生成に失敗しました');
-
-  // PDFを正しい場所へ移動（ライブラリが独自パスへ出力する場合）
-  if (pdf.filePath !== pdfPath) {
-    await RNFS.moveFile(pdf.filePath, pdfPath);
-  }
-
-  // メタデータJSON保存
   const record: SavedRecord = {
     id,
     karteData,
     pdfPath,
-    metaPath,
+    imagePaths,
     createdAt: new Date().toISOString(),
   };
-  await RNFS.writeFile(metaPath, JSON.stringify(record, null, 2), 'utf8');
+  await insertRecord(record);
 
   return record;
 }
@@ -91,26 +106,14 @@ export async function savePdfOnly(pageImages: string[]): Promise<SavedRecord> {
 
   const id = `scan_${Date.now()}`;
   const pdfPath = `${RECORDS_DIR}/${id}.pdf`;
-  const metaPath = `${RECORDS_DIR}/${id}.json`;
 
   const imagesHtml = pageImages
     .map(b64 => `<img src="data:image/jpeg;base64,${b64}" style="width:100%;margin-bottom:20px;"/>`)
     .join('');
-
   const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"/><style>body{margin:10px;}img{max-width:100%;}</style></head><body>${imagesHtml}</body></html>`;
 
-  const pdf = await RNHTMLtoPDF.convert({
-    html,
-    fileName: id,
-    directory: RECORDS_DIR,
-    base64: false,
-  });
-
-  if (!pdf.filePath) throw new Error('PDF生成に失敗しました');
-
-  if (pdf.filePath !== pdfPath) {
-    await RNFS.moveFile(pdf.filePath, pdfPath);
-  }
+  const imagePaths = await savePageImages(id, pageImages);
+  await generatePdf(id, html, pdfPath);
 
   const emptyKarte: KarteData = {
     patientName: '', birthDate: '', gender: '', address: '',
@@ -120,27 +123,15 @@ export async function savePdfOnly(pageImages: string[]): Promise<SavedRecord> {
     id,
     karteData: emptyKarte,
     pdfPath,
-    metaPath,
+    imagePaths,
     createdAt: new Date().toISOString(),
   };
-  await RNFS.writeFile(metaPath, JSON.stringify(record, null, 2), 'utf8');
+  await insertRecord(record);
 
   return record;
 }
 
+// 一覧はSQLiteから取得
 export async function listRecords(): Promise<SavedRecord[]> {
-  await ensureDir();
-  const files = await RNFS.readDir(RECORDS_DIR);
-  const jsonFiles = files.filter(f => f.name.endsWith('.json'));
-
-  const records = await Promise.all(
-    jsonFiles.map(async f => {
-      const content = await RNFS.readFile(f.path, 'utf8');
-      return JSON.parse(content) as SavedRecord;
-    }),
-  );
-
-  return records.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
+  return getAllRecords();
 }

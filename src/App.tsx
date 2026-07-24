@@ -15,9 +15,19 @@ import { DocumentScanner } from './utils/DocumentScanner';
 import { parseKarteText } from './utils/karteParser';
 import { saveRecord, savePdfOnly } from './utils/fileStorage';
 import { KarteForm, NerCandidates } from './components/KarteForm';
-import { KarteData, KarteCandidates } from './types';
+import { RecordList } from './components/RecordList';
+import { RecordDetail } from './components/RecordDetail';
+import { KarteData, KarteCandidates, SavedRecord } from './types';
 
-type AppState = 'idle' | 'scanning' | 'review' | 'pdf-review' | 'saving' | 'done';
+type AppState =
+  | 'idle'
+  | 'scanning'
+  | 'review'
+  | 'pdf-review'
+  | 'saving'
+  | 'done'
+  | 'list'
+  | 'detail';
 type ScanMode = 'ocr' | 'pdf';
 
 const EMPTY_KARTE: KarteData = {
@@ -49,6 +59,7 @@ export default function App() {
   const [candidates, setCandidates] = useState<KarteCandidates>(EMPTY_CANDIDATES);
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [savedPdfPath, setSavedPdfPath] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState<SavedRecord | null>(null);
   const [ner, setNer] = useState<NerCandidates>({
     personNames: [],
     placeNames: [],
@@ -120,10 +131,23 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>カルテスキャン</Text>
+        {appState === 'detail' ? (
+          <TouchableOpacity onPress={() => setAppState('list')} style={styles.resetBtn}>
+            <Text style={styles.resetText}>‹ 一覧</Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.headerTitle}>
+            {appState === 'list' ? '保存済み記録' : 'カルテスキャン'}
+          </Text>
+        )}
         {(appState === 'review' || appState === 'pdf-review') && (
           <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
             <Text style={styles.resetText}>やり直す</Text>
+          </TouchableOpacity>
+        )}
+        {(appState === 'list' || appState === 'detail') && (
+          <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
+            <Text style={styles.resetText}>閉じる</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -149,7 +173,33 @@ export default function App() {
               <Text style={styles.secondaryBtnText}>書類をPDFに変換</Text>
               <Text style={styles.btnSubTextDark}>そのままPDF保存</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.linkBtn}
+              onPress={() => setAppState('list')}>
+              <Text style={styles.linkBtnText}>保存済みの記録を見る</Text>
+            </TouchableOpacity>
           </View>
+        )}
+
+        {/* 保存済み一覧 */}
+        {appState === 'list' && (
+          <RecordList
+            onSelect={record => {
+              setSelectedRecord(record);
+              setAppState('detail');
+            }}
+          />
+        )}
+
+        {/* 記録詳細 */}
+        {appState === 'detail' && selectedRecord && (
+          <RecordDetail
+            record={selectedRecord}
+            onDeleted={() => {
+              setSelectedRecord(null);
+              setAppState('list');
+            }}
+          />
         )}
 
         {/* スキャン中 */}
@@ -232,7 +282,7 @@ export default function App() {
             <Text style={styles.doneIcon}>✅</Text>
             <Text style={styles.doneTitle}>保存完了</Text>
             <Text style={styles.doneSubtitle}>
-              PDFとメタデータを保存しました。
+              PDF・画像・データを保存しました。
             </Text>
             <Text style={styles.pathText} numberOfLines={3}>
               {savedPdfPath}
@@ -241,6 +291,11 @@ export default function App() {
               style={[styles.primaryBtn, { marginTop: 24 }]}
               onPress={handleReset}>
               <Text style={styles.primaryBtnText}>最初に戻る</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.linkBtn}
+              onPress={() => setAppState('list')}>
+              <Text style={styles.linkBtnText}>保存済みの記録を見る</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -314,6 +369,13 @@ const styles = StyleSheet.create({
   btnSubText: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
   btnSubTextDark: { color: '#2563EB', fontSize: 12, marginTop: 2, opacity: 0.7 },
   btnSpacer: { height: 16 },
+  linkBtn: { marginTop: 24, padding: 8 },
+  linkBtnText: {
+    color: '#2563EB',
+    fontSize: 15,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   previewSection: {
     marginTop: 24,
     borderTopWidth: 1,

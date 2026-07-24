@@ -34,6 +34,6 @@ export interface SavedRecord {
   id: string;
   karteData: KarteData;
   pdfPath: string;
-  metaPath: string;
+  imagePaths: string[]; // 保存したスキャン画像（file://なしの絶対パス）
   createdAt: string;
 }
