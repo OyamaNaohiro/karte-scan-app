@@ -1,19 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   Image,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
   Alert,
   StyleSheet,
 } from 'react-native';
 import { SavedRecord, KarteData } from '../types';
-import { deleteRecord } from '../utils/db';
+import { deleteRecord, insertRecord } from '../utils/db';
+import { KarteForm } from './KarteForm';
 
 interface Props {
   record: SavedRecord;
   onDeleted: () => void;
+  onUpdated?: () => void;
 }
 
 const FIELDS: { key: keyof KarteData; label: string }[] = [
@@ -27,7 +30,11 @@ const FIELDS: { key: keyof KarteData; label: string }[] = [
   { key: 'prescription', label: '処方装具名' },
 ];
 
-export function RecordDetail({ record, onDeleted }: Props) {
+export function RecordDetail({ record, onDeleted, onUpdated }: Props) {
+  const [editing, setEditing] = useState(false);
+  const [data, setData] = useState<KarteData>(record.karteData);
+  const [saving, setSaving] = useState(false);
+
   function confirmDelete() {
     Alert.alert('削除の確認', 'この記録を削除しますか？', [
       { text: 'キャンセル', style: 'cancel' },
@@ -46,15 +53,69 @@ export function RecordDetail({ record, onDeleted }: Props) {
     ]);
   }
 
+  async function handleSaveEdit() {
+    setSaving(true);
+    try {
+      // idを保持したままupsert（DBの抽出データを更新）
+      await insertRecord({ ...record, karteData: data });
+      setEditing(false);
+      onUpdated?.();
+    } catch (err: any) {
+      Alert.alert('保存エラー', err?.message ?? '保存に失敗しました');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancelEdit() {
+    setData(record.karteData);
+    setEditing(false);
+  }
+
+  // 編集モード: KarteForm（自前のスクロールを持つ）＋固定アクションバー
+  if (editing) {
+    return (
+      <View style={styles.flex}>
+        <View style={styles.formWrap}>
+          <KarteForm data={data} onChange={setData} />
+        </View>
+        <View style={styles.actionBar}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={cancelEdit}
+            disabled={saving}>
+            <Text style={styles.cancelText}>キャンセル</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={handleSaveEdit}
+            disabled={saving}>
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.saveText}>保存する</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // 閲覧モード
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      <Text style={styles.sectionTitle}>抽出データ</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.sectionTitle}>抽出データ</Text>
+        <TouchableOpacity style={styles.editBtn} onPress={() => setEditing(true)}>
+          <Text style={styles.editText}>編集</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.table}>
         {FIELDS.map(({ key, label }) => (
           <View key={key} style={styles.tableRow}>
             <Text style={styles.tableLabel}>{label}</Text>
             <Text style={styles.tableValue} selectable>
-              {record.karteData[key] || '—'}
+              {data[key] || '—'}
             </Text>
           </View>
         ))}
@@ -87,7 +148,16 @@ export function RecordDetail({ record, onDeleted }: Props) {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  formWrap: { flex: 1, paddingHorizontal: 20, paddingTop: 12 },
   content: { padding: 20, paddingBottom: 40 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    marginBottom: 12,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -95,6 +165,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 12,
   },
+  editBtn: {
+    borderWidth: 1,
+    borderColor: '#2563EB',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  editText: { color: '#2563EB', fontSize: 14, fontWeight: '700' },
   table: {
     borderWidth: 1,
     borderColor: '#e5e5e5',
@@ -143,4 +221,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteText: { color: '#dc2626', fontSize: 15, fontWeight: '700' },
+  actionBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    backgroundColor: '#fff',
+    gap: 12,
+  },
+  cancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cancelText: { color: '#555', fontSize: 15, fontWeight: '700' },
+  saveBtn: {
+    flex: 2,
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  saveText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

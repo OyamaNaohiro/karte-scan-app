@@ -121,6 +121,21 @@ export default function App() {
     }
   }
 
+  // すべての書類を確認せずまとめて保存（自動分類結果のまま）
+  async function handleSaveAllDocuments() {
+    try {
+      setAppState('saving');
+      for (const doc of documents) {
+        await saveRecord(doc.karteData, [doc.image]);
+      }
+      setSavedCount(documents.length);
+      setAppState('done');
+    } catch (err: any) {
+      setAppState('review');
+      Alert.alert('保存エラー', err?.message ?? '保存に失敗しました');
+    }
+  }
+
   // PDF変換: 1枚ごとに個別のPDFとして保存
   async function handleSavePdfAll() {
     try {
@@ -270,6 +285,15 @@ export default function App() {
                     : '保存して次へ'}
                 </Text>
               </TouchableOpacity>
+              {documents.length > 1 && (
+                <TouchableOpacity
+                  style={styles.secondaryActionBtn}
+                  onPress={handleSaveAllDocuments}>
+                  <Text style={styles.secondaryActionText}>
+                    チェックせず全{documents.length}件を保存（あとで編集）
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -402,6 +426,16 @@ const styles = StyleSheet.create({
   btnSubText: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
   btnSubTextDark: { color: '#2563EB', fontSize: 12, marginTop: 2, opacity: 0.7 },
   btnSpacer: { height: 16 },
+  secondaryActionBtn: {
+    marginTop: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  secondaryActionText: {
+    color: '#2563EB',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   progressBar: {
     backgroundColor: '#eef2ff',
     paddingVertical: 8,
