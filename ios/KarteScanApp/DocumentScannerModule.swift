@@ -143,35 +143,55 @@ class DocumentScannerModule: NSObject {
 // MARK: - VNDocumentCameraViewControllerDelegate
 extension DocumentScannerModule: VNDocumentCameraViewControllerDelegate {
 
+  // 一度に処理する最大書類数
+  private static let maxPages = 10
+
   func documentCameraViewController(_ controller: VNDocumentCameraViewController,
                                     didFinishWith scan: VNDocumentCameraScan) {
     controller.dismiss(animated: true)
 
-    var allTexts: [String] = []
-    var pageImages: [String] = []
+    let totalScanned = scan.pageCount
+    let pageCount = min(totalScanned, DocumentScannerModule.maxPages)
+
+    // 1枚=1書類として、ページごとにOCR結果と画像を保持する
+    var pageTexts = [[String]](repeating: [], count: pageCount)
+    var pageImages = [String](repeating: "", count: pageCount)
+    // 複数ページのOCR完了は並行して返るため、配列書き込みを直列化する
+    let syncQueue = DispatchQueue(label: "com.oyama.kartescanapp.ocrResults")
     let group = DispatchGroup()
 
-    for i in 0..<scan.pageCount {
+    for i in 0..<pageCount {
       let image = scan.imageOfPage(at: i)
-      pageImages.append(imageToBase64(image))
+      let base64 = imageToBase64(image)
 
       group.enter()
       performOCR(on: image) { texts in
-        allTexts.append(contentsOf: texts)
-        group.leave()
+        syncQueue.async {
+          pageTexts[i] = texts
+          pageImages[i] = base64
+          group.leave()
+        }
       }
     }
 
     group.notify(queue: .main) {
-      let fullText = allTexts.joined(separator: "\n")
-      let entities = self.extractNamedEntities(from: fullText)
+      // ページごとに個別のNERを行い、1書類分のペイロードにまとめる
+      var pages: [[String: Any]] = []
+      for i in 0..<pageCount {
+        let fullText = pageTexts[i].joined(separator: "\n")
+        let entities = self.extractNamedEntities(from: fullText)
+        pages.append([
+          "image": pageImages[i],
+          "texts": pageTexts[i],
+          "personNames": entities.personNames,
+          "placeNames": entities.placeNames,
+          "organizationNames": entities.organizationNames,
+        ])
+      }
       let result: [String: Any] = [
-        "texts": allTexts,
-        "pageImages": pageImages,
-        "pageCount": scan.pageCount,
-        "personNames": entities.personNames,
-        "placeNames": entities.placeNames,
-        "organizationNames": entities.organizationNames,
+        "pageCount": pageCount,
+        "totalScanned": totalScanned,
+        "pages": pages,
       ]
       self.resolve?(result)
     }

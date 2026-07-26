@@ -1,10 +1,16 @@
-export interface ScanResult {
-  texts: string[];
-  pageImages: string[]; // base64エンコード済みJPEG
-  pageCount: number;
+// 1枚（1書類）分のスキャン結果
+export interface PageScan {
+  image: string;              // base64エンコード済みJPEG
+  texts: string[];            // OCRで再構成した行
   personNames: string[];      // NLTaggerで検出した人名候補
   placeNames: string[];       // NLTaggerで検出した地名候補
   organizationNames: string[]; // NLTaggerで検出した組織名候補
+}
+
+export interface ScanResult {
+  pageCount: number;    // 実際に返したページ数（最大10）
+  totalScanned: number; // ユーザーがスキャンした総数
+  pages: PageScan[];    // 1枚ごとに分けたスキャン結果
 }
 
 export interface KarteData {

@@ -30,59 +30,59 @@ type AppState =
   | 'detail';
 type ScanMode = 'ocr' | 'pdf';
 
-const EMPTY_KARTE: KarteData = {
-  patientName: '',
-  birthDate: '',
-  gender: '',
-  address: '',
-  hospitalName: '',
-  diagnosis: '',
-  doctor: '',
-  prescription: '',
-  rawText: '',
-};
-
-const EMPTY_CANDIDATES: KarteCandidates = {
-  patientName: [],
-  birthDate: [],
-  gender: [],
-  address: [],
-  hospitalName: [],
-  diagnosis: [],
-  doctor: [],
-  prescription: [],
-};
+// 1枚（1書類）分の確認用データ
+interface ReviewDoc {
+  karteData: KarteData;
+  candidates: KarteCandidates;
+  ner: NerCandidates;
+  image: string; // base64
+}
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('idle');
-  const [karteData, setKarteData] = useState<KarteData>(EMPTY_KARTE);
-  const [candidates, setCandidates] = useState<KarteCandidates>(EMPTY_CANDIDATES);
-  const [pageImages, setPageImages] = useState<string[]>([]);
-  const [savedPdfPath, setSavedPdfPath] = useState('');
+  // OCR確認フロー: 1枚ごとに分類した書類の配列と現在位置
+  const [documents, setDocuments] = useState<ReviewDoc[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  // PDF変換フロー: 1枚=1PDFとして扱う画像配列
+  const [pdfImages, setPdfImages] = useState<string[]>([]);
+  const [savedCount, setSavedCount] = useState(0);
   const [selectedRecord, setSelectedRecord] = useState<SavedRecord | null>(null);
-  const [ner, setNer] = useState<NerCandidates>({
-    personNames: [],
-    placeNames: [],
-    organizationNames: [],
-  });
 
   async function handleScan(mode: ScanMode) {
     try {
       setAppState('scanning');
       const result = await DocumentScanner.scan();
 
-      setPageImages(result.pageImages);
+      if (!result.pages || result.pages.length === 0) {
+        setAppState('idle');
+        Alert.alert('スキャン', '書類が読み取れませんでした。');
+        return;
+      }
+
       if (mode === 'ocr') {
-        const parsed = parseKarteText(result.texts, result.personNames, result.placeNames, result.organizationNames);
-        setKarteData(parsed.data);
-        setCandidates(parsed.candidates);
-        setNer({
-          personNames: result.personNames,
-          placeNames: result.placeNames,
-          organizationNames: result.organizationNames,
+        const docs: ReviewDoc[] = result.pages.map(p => {
+          const parsed = parseKarteText(
+            p.texts,
+            p.personNames,
+            p.placeNames,
+            p.organizationNames,
+          );
+          return {
+            karteData: parsed.data,
+            candidates: parsed.candidates,
+            ner: {
+              personNames: p.personNames,
+              placeNames: p.placeNames,
+              organizationNames: p.organizationNames,
+            },
+            image: p.image,
+          };
         });
+        setDocuments(docs);
+        setCurrentIndex(0);
         setAppState('review');
       } else {
+        setPdfImages(result.pages.map(p => p.image));
         setAppState('pdf-review');
       }
     } catch (err: any) {
@@ -93,11 +93,42 @@ export default function App() {
     }
   }
 
-  async function handleSavePdfOnly() {
+  // 現在の書類の抽出データを更新
+  function updateCurrentKarte(updated: KarteData) {
+    setDocuments(docs =>
+      docs.map((d, i) => (i === currentIndex ? { ...d, karteData: updated } : d)),
+    );
+  }
+
+  // 現在の書類を保存し、次の書類へ or 完了
+  async function handleSaveCurrent() {
+    const doc = documents[currentIndex];
+    if (!doc) return;
     try {
       setAppState('saving');
-      const record = await savePdfOnly(pageImages);
-      setSavedPdfPath(record.pdfPath);
+      await saveRecord(doc.karteData, [doc.image]);
+      const isLast = currentIndex + 1 >= documents.length;
+      if (isLast) {
+        setSavedCount(documents.length);
+        setAppState('done');
+      } else {
+        setCurrentIndex(currentIndex + 1);
+        setAppState('review');
+      }
+    } catch (err: any) {
+      setAppState('review');
+      Alert.alert('保存エラー', err?.message ?? '保存に失敗しました');
+    }
+  }
+
+  // PDF変換: 1枚ごとに個別のPDFとして保存
+  async function handleSavePdfAll() {
+    try {
+      setAppState('saving');
+      for (const img of pdfImages) {
+        await savePdfOnly([img]);
+      }
+      setSavedCount(pdfImages.length);
       setAppState('done');
     } catch (err: any) {
       setAppState('pdf-review');
@@ -105,24 +136,11 @@ export default function App() {
     }
   }
 
-  async function handleSave() {
-    try {
-      setAppState('saving');
-      const record = await saveRecord(karteData, pageImages);
-      setSavedPdfPath(record.pdfPath);
-      setAppState('done');
-    } catch (err: any) {
-      setAppState('review');
-      Alert.alert('保存エラー', err?.message ?? '保存に失敗しました');
-    }
-  }
-
   function handleReset() {
-    setKarteData(EMPTY_KARTE);
-    setCandidates(EMPTY_CANDIDATES);
-    setPageImages([]);
-    setSavedPdfPath('');
-    setNer({ personNames: [], placeNames: [], organizationNames: [] });
+    setDocuments([]);
+    setCurrentIndex(0);
+    setPdfImages([]);
+    setSavedCount(0);
     setAppState('idle');
   }
 
@@ -137,7 +155,11 @@ export default function App() {
           </TouchableOpacity>
         ) : (
           <Text style={styles.headerTitle}>
-            {appState === 'list' ? '保存済み記録' : 'カルテスキャン'}
+            {appState === 'list'
+              ? '保存済み記録'
+              : appState === 'review' && documents.length > 0
+              ? `確認 ${currentIndex + 1} / ${documents.length}`
+              : 'カルテスキャン'}
           </Text>
         )}
         {(appState === 'review' || appState === 'pdf-review') && (
@@ -210,59 +232,73 @@ export default function App() {
           </View>
         )}
 
-        {/* 確認フォーム */}
-        {appState === 'review' && (
+        {/* 確認フォーム（1枚ずつ） */}
+        {appState === 'review' && documents[currentIndex] && (
           <View style={styles.flex}>
+            {documents.length > 1 && (
+              <View style={styles.progressBar}>
+                <Text style={styles.progressText}>
+                  書類 {currentIndex + 1} / {documents.length} 枚
+                </Text>
+              </View>
+            )}
             <ScrollView
               style={styles.flex}
               contentContainerStyle={styles.formContent}>
               <KarteForm
-                data={karteData}
-                onChange={setKarteData}
-                candidates={candidates}
-                ner={ner}
+                data={documents[currentIndex].karteData}
+                onChange={updateCurrentKarte}
+                candidates={documents[currentIndex].candidates}
+                ner={documents[currentIndex].ner}
               />
-              {pageImages.length > 0 && (
-                <View style={styles.previewSection}>
-                  <Text style={styles.previewTitle}>スキャン画像プレビュー</Text>
-                  {pageImages.map((b64: string, i: number) => (
-                    <Image
-                      key={i}
-                      source={{ uri: `data:image/jpeg;base64,${b64}` }}
-                      style={styles.previewImage}
-                      resizeMode="contain"
-                    />
-                  ))}
-                </View>
-              )}
+              <View style={styles.previewSection}>
+                <Text style={styles.previewTitle}>スキャン画像プレビュー</Text>
+                <Image
+                  source={{
+                    uri: `data:image/jpeg;base64,${documents[currentIndex].image}`,
+                  }}
+                  style={styles.previewImage}
+                  resizeMode="contain"
+                />
+              </View>
             </ScrollView>
             <View style={styles.actionBar}>
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleSave}>
-                <Text style={styles.primaryBtnText}>保存する</Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveCurrent}>
+                <Text style={styles.primaryBtnText}>
+                  {currentIndex + 1 >= documents.length
+                    ? '保存して完了'
+                    : '保存して次へ'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* PDF確認画面 */}
+        {/* PDF確認画面（1枚=1PDF） */}
         {appState === 'pdf-review' && (
           <View style={styles.flex}>
             <ScrollView
               style={styles.flex}
               contentContainerStyle={styles.formContent}>
-              <Text style={styles.previewTitle}>スキャン画像の確認</Text>
-              {pageImages.map((b64: string, i: number) => (
-                <Image
-                  key={i}
-                  source={{ uri: `data:image/jpeg;base64,${b64}` }}
-                  style={styles.previewImage}
-                  resizeMode="contain"
-                />
+              <Text style={styles.previewTitle}>
+                スキャン画像の確認（{pdfImages.length}枚）
+              </Text>
+              {pdfImages.map((b64: string, i: number) => (
+                <View key={i}>
+                  <Text style={styles.pdfPageLabel}>{i + 1}枚目</Text>
+                  <Image
+                    source={{ uri: `data:image/jpeg;base64,${b64}` }}
+                    style={styles.previewImage}
+                    resizeMode="contain"
+                  />
+                </View>
               ))}
             </ScrollView>
             <View style={styles.actionBar}>
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleSavePdfOnly}>
-                <Text style={styles.primaryBtnText}>PDFとして保存する</Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleSavePdfAll}>
+                <Text style={styles.primaryBtnText}>
+                  それぞれPDFとして保存する（{pdfImages.length}件）
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -282,10 +318,7 @@ export default function App() {
             <Text style={styles.doneIcon}>✅</Text>
             <Text style={styles.doneTitle}>保存完了</Text>
             <Text style={styles.doneSubtitle}>
-              PDF・画像・データを保存しました。
-            </Text>
-            <Text style={styles.pathText} numberOfLines={3}>
-              {savedPdfPath}
+              {savedCount}件の書類を保存しました。
             </Text>
             <TouchableOpacity
               style={[styles.primaryBtn, { marginTop: 24 }]}
@@ -369,6 +402,24 @@ const styles = StyleSheet.create({
   btnSubText: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 },
   btnSubTextDark: { color: '#2563EB', fontSize: 12, marginTop: 2, opacity: 0.7 },
   btnSpacer: { height: 16 },
+  progressBar: {
+    backgroundColor: '#eef2ff',
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e7ff',
+  },
+  progressText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  pdfPageLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#888',
+    marginBottom: 4,
+  },
   linkBtn: { marginTop: 24, padding: 8 },
   linkBtnText: {
     color: '#2563EB',
