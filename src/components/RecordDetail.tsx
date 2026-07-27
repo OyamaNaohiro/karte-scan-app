@@ -28,6 +28,9 @@ const FIELDS: { key: keyof KarteData; label: string }[] = [
   { key: 'diagnosis', label: '病名' },
   { key: 'doctor', label: '担当医' },
   { key: 'prescription', label: '処方装具名' },
+  { key: 'orderDate', label: '受注日' },
+  { key: 'deliveryDate', label: '納品日' },
+  { key: 'price', label: '装具代金' },
 ];
 
 export function RecordDetail({ record, onDeleted, onUpdated }: Props) {

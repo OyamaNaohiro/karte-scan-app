@@ -22,6 +22,10 @@ export interface KarteData {
   diagnosis: string;
   doctor: string;
   prescription: string;
+  // OCRでは抽出しない手入力項目
+  orderDate: string;    // 受注日（保存日をデフォルト）
+  deliveryDate: string; // 納品日
+  price: string;        // 装具代金
   rawText: string;
 }
 

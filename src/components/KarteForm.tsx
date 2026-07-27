@@ -31,6 +31,9 @@ const FIELDS: { key: KarteField; label: string; multiline?: boolean }[] = [
   { key: 'diagnosis', label: '病名', multiline: true },
   { key: 'doctor', label: '担当医' },
   { key: 'prescription', label: '処方装具名', multiline: true },
+  { key: 'orderDate', label: '受注日' },
+  { key: 'deliveryDate', label: '納品日' },
+  { key: 'price', label: '装具代金' },
 ];
 
 export function KarteForm({ data, onChange, candidates, ner }: Props) {

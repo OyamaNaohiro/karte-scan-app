@@ -39,14 +39,30 @@ export async function initDb(): Promise<void> {
       diagnosis TEXT,
       doctor TEXT,
       prescription TEXT,
+      orderDate TEXT,
+      deliveryDate TEXT,
+      price TEXT,
       rawText TEXT,
       pdfPath TEXT,
       imagePaths TEXT,
       createdAt TEXT
     );`,
   );
+  await addMissingColumns();
   initialized = true;
   await migrateLegacyJson();
+}
+
+// 既存DBに後から追加した列を補う（重複エラーは無視）
+async function addMissingColumns(): Promise<void> {
+  const columns = ['orderDate', 'deliveryDate', 'price'];
+  for (const col of columns) {
+    try {
+      await db().execute(`ALTER TABLE records ADD COLUMN ${col} TEXT;`);
+    } catch {
+      // すでに存在する列は無視
+    }
+  }
 }
 
 // 行(DB) → SavedRecord へ変換
@@ -60,6 +76,9 @@ function rowToRecord(row: any): SavedRecord {
     diagnosis: row.diagnosis ?? '',
     doctor: row.doctor ?? '',
     prescription: row.prescription ?? '',
+    orderDate: row.orderDate ?? '',
+    deliveryDate: row.deliveryDate ?? '',
+    price: row.price ?? '',
     rawText: row.rawText ?? '',
   };
   let imagePaths: string[] = [];
@@ -84,8 +103,9 @@ export async function insertRecord(record: SavedRecord): Promise<void> {
   await db().execute(
     `INSERT OR REPLACE INTO records
       (id, patientName, birthDate, gender, address, hospitalName,
-       diagnosis, doctor, prescription, rawText, pdfPath, imagePaths, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+       diagnosis, doctor, prescription, orderDate, deliveryDate, price,
+       rawText, pdfPath, imagePaths, createdAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       record.id,
       k.patientName,
@@ -96,6 +116,9 @@ export async function insertRecord(record: SavedRecord): Promise<void> {
       k.diagnosis,
       k.doctor,
       k.prescription,
+      k.orderDate,
+      k.deliveryDate,
+      k.price,
       k.rawText,
       record.pdfPath,
       JSON.stringify(record.imagePaths),
@@ -156,9 +179,16 @@ async function migrateLegacyJson(): Promise<void> {
         if (!legacy.id) continue;
         const existing = await getRecord(legacy.id);
         if (existing) continue;
+        // 旧JSONに無い手入力項目は空で補完
+        const base: KarteData = {
+          patientName: '', birthDate: '', gender: '', address: '',
+          hospitalName: '', diagnosis: '', doctor: '', prescription: '',
+          orderDate: '', deliveryDate: '', price: '', rawText: '',
+        };
+        const karteData: KarteData = { ...base, ...legacy.karteData };
         await insertRecord({
           id: legacy.id,
-          karteData: legacy.karteData,
+          karteData,
           pdfPath: legacy.pdfPath ?? '',
           imagePaths: legacy.imagePaths ?? [],
           createdAt: legacy.createdAt ?? new Date().toISOString(),

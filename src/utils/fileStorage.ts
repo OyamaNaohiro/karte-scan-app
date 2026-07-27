@@ -10,6 +10,13 @@ async function ensureDir(): Promise<void> {
   if (!exists) await RNFS.mkdir(RECORDS_DIR);
 }
 
+// 保存日（YYYY/MM/DD）
+function todayStr(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
+}
+
 // base64画像配列からHTML文字列を生成
 function buildHtml(karteData: KarteData, pageImages: string[]): string {
   const imagesHtml = pageImages
@@ -41,6 +48,9 @@ function buildHtml(karteData: KarteData, pageImages: string[]): string {
     <tr><td>病名</td><td>${karteData.diagnosis || '—'}</td></tr>
     <tr><td>担当医</td><td>${karteData.doctor || '—'}</td></tr>
     <tr><td>処方装具名</td><td>${karteData.prescription || '—'}</td></tr>
+    <tr><td>受注日</td><td>${karteData.orderDate || '—'}</td></tr>
+    <tr><td>納品日</td><td>${karteData.deliveryDate || '—'}</td></tr>
+    <tr><td>装具代金</td><td>${karteData.price || '—'}</td></tr>
   </table>
   <div class="page-title">スキャン画像</div>
   ${imagesHtml}
@@ -86,12 +96,18 @@ export async function saveRecord(
   const id = `karte_${Date.now()}`;
   const pdfPath = `${RECORDS_DIR}/${id}.pdf`;
 
+  // 受注日が未入力なら保存日をデフォルトに
+  const data: KarteData = {
+    ...karteData,
+    orderDate: karteData.orderDate || todayStr(),
+  };
+
   const imagePaths = await savePageImages(id, pageImages);
-  await generatePdf(id, buildHtml(karteData, pageImages), pdfPath);
+  await generatePdf(id, buildHtml(data, pageImages), pdfPath);
 
   const record: SavedRecord = {
     id,
-    karteData,
+    karteData: data,
     pdfPath,
     imagePaths,
     createdAt: new Date().toISOString(),
@@ -117,7 +133,8 @@ export async function savePdfOnly(pageImages: string[]): Promise<SavedRecord> {
 
   const emptyKarte: KarteData = {
     patientName: '', birthDate: '', gender: '', address: '',
-    hospitalName: '', diagnosis: '', doctor: '', prescription: '', rawText: '',
+    hospitalName: '', diagnosis: '', doctor: '', prescription: '',
+    orderDate: todayStr(), deliveryDate: '', price: '', rawText: '',
   };
   const record: SavedRecord = {
     id,

@@ -423,6 +423,10 @@ export function parseKarteText(
     diagnosis: diagnoses,
     doctor: doctors,
     prescription: prescriptions,
+    // 手入力項目はOCR候補なし
+    orderDate: [],
+    deliveryDate: [],
+    price: [],
   };
 
   // 先頭候補を採用値とする
@@ -435,6 +439,10 @@ export function parseKarteText(
     diagnosis: diagnoses[0] ?? '',
     doctor: doctors[0] ?? '',
     prescription: prescriptions[0] ?? '',
+    // 手入力項目（受注日は保存時にデフォルト設定）
+    orderDate: '',
+    deliveryDate: '',
+    price: '',
     rawText: fullText,
   };
 
