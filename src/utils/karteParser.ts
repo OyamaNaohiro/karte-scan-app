@@ -89,6 +89,21 @@ function trimNameValue(raw: string): string {
   return s.slice(0, end).trim();
 }
 
+// 氏名に付いたふりがな（末尾のカタカナのみのトークン）を除去する
+// 例: "本間 美佐江 ホンマミサエ" → "本間 美佐江"
+// カタカナのみの氏名（外国人名など）は漢字トークンが無いのでそのまま残す
+function stripFurigana(name: string): string {
+  const tokens = name.split(/[\s　]+/).filter(Boolean);
+  if (tokens.length < 2) return name;
+  const isKatakana = (t: string) => /^[ァ-ヶー・]+$/.test(t);
+  const hasKanji = tokens.some(t => /[一-龥]/.test(t));
+  if (!hasKanji) return name;
+  while (tokens.length > 1 && isKatakana(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+  return tokens.join(' ');
+}
+
 // 氏名として妥当か判定
 // - 2〜12文字（「尾崎進」のような3文字名も許可）
 // - 数字を含むもの（生年月日など）は除外
@@ -97,6 +112,7 @@ const NAME_STOP_WORDS = [
   '氏名', '名前', '患者', '生年', '月日', '住所', '病名', '診断',
   '担当', '医師', '主治', '性別', '男性', '女性', '不明',
   '病院', 'クリニック', '医院', '装具', '指示', '番号',
+  '部署', '外来', '装着', '記入', '処方',
 ];
 function isValidName(raw: string): boolean {
   const s = cleanName(raw);
@@ -111,17 +127,27 @@ function isValidName(raw: string): boolean {
 // 生年月日らしい行かどうか
 const BIRTHDATE_LINE = /(?:昭和|平成|令和|大正|明治)\s*\d{1,2}\s*年|\d{4}\s*[年\/\-]\s*\d{1,2}\s*[月\/\-]/;
 
-// 生年月日行の前後行を氏名候補として拾う
-// ラベルと値が離れた表形式カルテ（"氏名"ラベルの下に別ラベルが続く）対策。
-// カルテでは「氏名 → 生年月日」の並びが多く、生年月日行の直前が氏名であることが多い。
-function extractNamesNearBirthDate(lines: string[]): string[] {
-  const found: string[] = [];
+// 生年月日「そのもの」の行の前後行を氏名候補として拾う
+// ラベルと値が離れた表形式・ラベルなし書類対策。カルテでは「氏名 → 生年月日」
+// の並びが多く、生年月日行の直前が氏名であることが多い。
+// 処方日など他の日付行に釣られないよう、最有力の生年月日(primaryBirthDate)を
+// 含む行のみを基準にする。
+function extractNamesNearBirthDate(
+  lines: string[],
+  primaryBirthDate: string,
+): string[] {
+  const norm = (s: string) => s.replace(/[\s　]/g, '');
+  const target = norm(primaryBirthDate);
+  if (!target) return [];
+
   for (let i = 0; i < lines.length; i++) {
-    if (!BIRTHDATE_LINE.test(lines[i])) continue;
-    if (i - 1 >= 0) found.push(lines[i - 1]);
+    if (!norm(lines[i]).includes(target)) continue;
+    const found: string[] = [];
+    if (i - 1 >= 0) found.push(lines[i - 1]); // 直前を優先
     if (i + 1 < lines.length) found.push(lines[i + 1]);
+    return found;
   }
-  return found;
+  return [];
 }
 
 // キーワード行かどうか判定
@@ -133,23 +159,57 @@ function isKeywordLine(line: string): boolean {
   return false;
 }
 
-// 生年月日を正規表現で検出（和暦・西暦対応）
+// 生年月日を検出する。ラベルや「生」が無い書類、かつ処方日など紛らわしい
+// 日付が混在する書類にも対応するため、確からしさでスコア付けして並べる。
+// - 「生年月日」ラベル / 「生」接尾辞付き … 最優先
+// - 昭和・大正・明治の和暦 … 誕生日の可能性が高い
+// - 平成 … 中程度、令和 … 低い（処方日・作成日のことが多い）
+// 電話番号(0144-87-2158)などを誤検出しないよう、西暦はハイフン区切りを避ける。
 function extractBirthDates(text: string): string[] {
-  const patterns = [
-    /生年月日[：:\s]*(\d{4}[年\/\-]\d{1,2}[月\/\-]\d{1,2}日?)/g,
-    /生年月日[：:\s]*((?:昭和|平成|令和)\d+年\d{1,2}月\d{1,2}日)/g,
-    /(?:昭和|平成|令和)\d+年\d{1,2}月\d{1,2}日生/g,
-    /(\d{4})年(\d{1,2})月(\d{1,2})日生/g,
-  ];
-  const found: string[] = [];
-  for (const pattern of patterns) {
-    const matches = text.match(pattern);
-    if (!matches) continue;
-    for (const m of matches) {
-      found.push(m.replace(/生年月日[：:\s]*/, '').trim());
-    }
+  const scored: { value: string; score: number }[] = [];
+  const push = (value: string, score: number) => {
+    const t = value.trim();
+    if (t) scored.push({ value: t, score });
+  };
+
+  // 明示ラベル付き（和暦・西暦どちらも）
+  for (const m of text.matchAll(
+    /生年月日[：:\s]*((?:昭和|平成|令和|大正|明治)?\s*\d{1,4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)/g,
+  )) {
+    push(m[1], 100);
   }
-  return uniq(found);
+  // 「生」接尾辞付き
+  for (const m of text.matchAll(
+    /((?:昭和|平成|令和|大正|明治)\s*\d{1,2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)生/g,
+  )) {
+    push(m[1], 100);
+  }
+  // 和暦（「生」なし）。昭和・大正・明治は誕生日である可能性が高い
+  for (const m of text.matchAll(
+    /(?:昭和|大正|明治)\s*\d{1,2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g,
+  )) {
+    push(m[0], 80);
+  }
+  for (const m of text.matchAll(
+    /平成\s*\d{1,2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g,
+  )) {
+    push(m[0], 60);
+  }
+  for (const m of text.matchAll(
+    /令和\s*\d{1,2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g,
+  )) {
+    push(m[0], 20);
+  }
+  // 西暦（年月日 or スラッシュ区切りのみ。ハイフンは電話番号誤検出を避けて不可）
+  for (const m of text.matchAll(/\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日/g)) {
+    push(m[0], 40);
+  }
+  for (const m of text.matchAll(/\d{4}\/\d{1,2}\/\d{1,2}/g)) {
+    push(m[0], 40);
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+  return uniq(scored.map(s => s.value));
 }
 
 // 性別抽出（両方の表記が混在する場合は両方を候補にする）
@@ -322,19 +382,24 @@ export function parseKarteText(
   const fullText = rawTexts.join('\n');
   const lines = rawTexts.map(t => t.trim()).filter(Boolean);
 
+  const birthDates = extractBirthDates(fullText);
+
   // キーワード抽出とNER人名を統合し、敬称除去・妥当性チェックで絞り込む
+  // 信頼度順: 明示ラベル → 生年月日隣接 → NER人名
+  // （ラベルが無い書類では生年月日の隣が氏名であることが多く、医師名などの
+  //   NER候補より優先したい）
   const patientNames = uniq(
     [
       ...extractAllAfterKeyword(lines, ['患者氏名', '患者名', '氏名', '名前', 'Name']),
+      ...extractNamesNearBirthDate(lines, birthDates[0] ?? ''),
       ...personNames,
-      ...extractNamesNearBirthDate(lines),
     ]
       .map(trimNameValue)
+      .map(stripFurigana)
       .map(cleanName)
       .filter(isValidName),
   );
 
-  const birthDates = extractBirthDates(fullText);
   const genders = extractGenders(fullText);
   const addresses = extractAddresses(lines, fullText, placeNames);
   const hospitalNames = extractHospitalNames(lines, organizationNames);
