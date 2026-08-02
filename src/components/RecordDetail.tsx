@@ -24,6 +24,8 @@ const FIELDS: { key: keyof KarteData; label: string }[] = [
   { key: 'birthDate', label: '生年月日' },
   { key: 'gender', label: '性別' },
   { key: 'address', label: '住所' },
+  { key: 'phone', label: '電話番号' },
+  { key: 'insurance', label: '保険' },
   { key: 'hospitalName', label: '病院名' },
   { key: 'diagnosis', label: '病名' },
   { key: 'doctor', label: '担当医' },

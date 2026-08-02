@@ -346,6 +346,35 @@ function extractAddresses(lines: string[], fullText: string, placeNames: string[
   return uniq(found);
 }
 
+// 電話番号の抽出（キーワード → 電話番号らしい数字列）
+function extractPhones(lines: string[], fullText: string): string[] {
+  const found = extractAllAfterKeyword(lines, [
+    '電話番号', '電話', 'TEL', 'Tel', 'tel', '℡', '連絡先',
+  ]);
+
+  // 0始まりのハイフン区切り数字列（固定・携帯・フリーダイヤル）
+  const matches = fullText.match(/0\d{1,4}[-‐－(]\d{1,4}[-‐－)]\d{3,4}/g);
+  if (matches) found.push(...matches);
+
+  // キーワード由来の値から電話番号部分だけを取り出す
+  const cleaned = found.map(v => {
+    const m = v.match(/0\d{1,4}[-‐－(]\d{1,4}[-‐－)]\d{3,4}/);
+    return m ? m[0] : v.trim();
+  });
+  return uniq(cleaned);
+}
+
+// 保険の抽出（"保険" / OCRで崩れた "保健" にも対応）
+function extractInsurances(lines: string[]): string[] {
+  const found = extractAllAfterKeyword(lines, [
+    '保険種別', '保険区分', '保険', '保健',
+  ]);
+  // 先頭の注記 "（○○記入）：" を除去
+  return uniq(
+    found.map(v => v.replace(/^[（(][^）)]*[）)]\s*[：:]?\s*/, '').trim()),
+  );
+}
+
 // 病院名の抽出（キーワード行 → 行単体マッチ → NLTagger組織名フォールバック）
 const HOSPITAL_KEYWORDS = ['病院', 'クリニック', '医院', '診療所', '医療センター', '医療法人'];
 function extractHospitalNames(lines: string[], organizationNames: string[]): string[] {
@@ -402,6 +431,8 @@ export function parseKarteText(
 
   const genders = extractGenders(fullText);
   const addresses = extractAddresses(lines, fullText, placeNames);
+  const phones = extractPhones(lines, fullText);
+  const insurances = extractInsurances(lines);
   const hospitalNames = extractHospitalNames(lines, organizationNames);
 
   const rawDiagnoses = extractRawDiagnoses(lines);
@@ -419,6 +450,8 @@ export function parseKarteText(
     birthDate: birthDates,
     gender: genders,
     address: addresses,
+    phone: phones,
+    insurance: insurances,
     hospitalName: hospitalNames,
     diagnosis: diagnoses,
     doctor: doctors,
@@ -435,6 +468,8 @@ export function parseKarteText(
     birthDate: birthDates[0] ?? '',
     gender: genders[0] ?? '',
     address: addresses[0] ?? '',
+    phone: phones[0] ?? '',
+    insurance: insurances[0] ?? '',
     hospitalName: hospitalNames[0] ?? '',
     diagnosis: diagnoses[0] ?? '',
     doctor: doctors[0] ?? '',

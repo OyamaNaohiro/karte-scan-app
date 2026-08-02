@@ -18,6 +18,8 @@ export interface KarteData {
   birthDate: string;
   gender: string;
   address: string;
+  phone: string;
+  insurance: string;
   hospitalName: string;
   diagnosis: string;
   doctor: string;

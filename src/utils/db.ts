@@ -39,6 +39,8 @@ export async function initDb(): Promise<void> {
       diagnosis TEXT,
       doctor TEXT,
       prescription TEXT,
+      phone TEXT,
+      insurance TEXT,
       orderDate TEXT,
       deliveryDate TEXT,
       price TEXT,
@@ -55,7 +57,7 @@ export async function initDb(): Promise<void> {
 
 // 既存DBに後から追加した列を補う（重複エラーは無視）
 async function addMissingColumns(): Promise<void> {
-  const columns = ['orderDate', 'deliveryDate', 'price'];
+  const columns = ['phone', 'insurance', 'orderDate', 'deliveryDate', 'price'];
   for (const col of columns) {
     try {
       await db().execute(`ALTER TABLE records ADD COLUMN ${col} TEXT;`);
@@ -76,6 +78,8 @@ function rowToRecord(row: any): SavedRecord {
     diagnosis: row.diagnosis ?? '',
     doctor: row.doctor ?? '',
     prescription: row.prescription ?? '',
+    phone: row.phone ?? '',
+    insurance: row.insurance ?? '',
     orderDate: row.orderDate ?? '',
     deliveryDate: row.deliveryDate ?? '',
     price: row.price ?? '',
@@ -103,9 +107,10 @@ export async function insertRecord(record: SavedRecord): Promise<void> {
   await db().execute(
     `INSERT OR REPLACE INTO records
       (id, patientName, birthDate, gender, address, hospitalName,
-       diagnosis, doctor, prescription, orderDate, deliveryDate, price,
+       diagnosis, doctor, prescription, phone, insurance,
+       orderDate, deliveryDate, price,
        rawText, pdfPath, imagePaths, createdAt)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       record.id,
       k.patientName,
@@ -116,6 +121,8 @@ export async function insertRecord(record: SavedRecord): Promise<void> {
       k.diagnosis,
       k.doctor,
       k.prescription,
+      k.phone,
+      k.insurance,
       k.orderDate,
       k.deliveryDate,
       k.price,
@@ -182,6 +189,7 @@ async function migrateLegacyJson(): Promise<void> {
         // 旧JSONに無い手入力項目は空で補完
         const base: KarteData = {
           patientName: '', birthDate: '', gender: '', address: '',
+          phone: '', insurance: '',
           hospitalName: '', diagnosis: '', doctor: '', prescription: '',
           orderDate: '', deliveryDate: '', price: '', rawText: '',
         };
