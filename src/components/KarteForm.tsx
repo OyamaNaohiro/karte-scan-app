@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { KarteData, KarteField, KarteCandidates } from '../types';
+import { DateField } from './DateField';
+import { getHospitalNames } from '../utils/db';
 
 export interface NerCandidates {
   personNames: string[];
@@ -22,7 +24,13 @@ interface Props {
   ner?: NerCandidates;
 }
 
-const FIELDS: { key: KarteField; label: string; multiline?: boolean }[] = [
+type FieldType = 'text' | 'date';
+const FIELDS: {
+  key: KarteField;
+  label: string;
+  multiline?: boolean;
+  type?: FieldType;
+}[] = [
   { key: 'patientName', label: '氏名' },
   { key: 'birthDate', label: '生年月日' },
   { key: 'gender', label: '性別' },
@@ -33,35 +41,77 @@ const FIELDS: { key: KarteField; label: string; multiline?: boolean }[] = [
   { key: 'diagnosis', label: '病名', multiline: true },
   { key: 'doctor', label: '担当医' },
   { key: 'prescription', label: '処方装具名', multiline: true },
-  { key: 'orderDate', label: '受注日' },
-  { key: 'deliveryDate', label: '納品日' },
+  { key: 'orderDate', label: '受注日', type: 'date' },
+  { key: 'deliveryDate', label: '納品日', type: 'date' },
   { key: 'price', label: '装具代金' },
 ];
 
 export function KarteForm({ data, onChange, candidates, ner }: Props) {
   const [showRaw, setShowRaw] = useState(false);
   const [showParsed, setShowParsed] = useState(false);
+  const [hospitalNames, setHospitalNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    getHospitalNames()
+      .then(setHospitalNames)
+      .catch(() => setHospitalNames([]));
+  }, []);
 
   function handleChange(key: KarteField, value: string) {
     onChange({ ...data, [key]: value });
   }
 
+  // 病院名の入力に対する登録済み候補（部分一致・最大6件）
+  function hospitalSuggestions(current: string): string[] {
+    const q = current.trim();
+    const pool = hospitalNames.filter(h => h !== q);
+    if (!q) return pool.slice(0, 6);
+    return pool.filter(h => h.includes(q)).slice(0, 6);
+  }
+
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.sectionTitle}>抽出データの確認・修正</Text>
-      {FIELDS.map(({ key, label, multiline }) => {
+      {FIELDS.map(({ key, label, multiline, type }) => {
         const options = candidates?.[key] ?? [];
+        const hospitalOpts =
+          key === 'hospitalName' ? hospitalSuggestions(data[key]) : [];
         return (
           <View key={key} style={styles.fieldRow}>
             <Text style={styles.label}>{label}</Text>
-            <TextInput
-              style={[styles.input, multiline && styles.inputMulti]}
-              value={data[key]}
-              onChangeText={(v: string) => handleChange(key, v)}
-              placeholder={`${label}を入力`}
-              placeholderTextColor="#aaa"
-              multiline={multiline}
-            />
+            {type === 'date' ? (
+              <DateField
+                value={data[key]}
+                onChange={(v: string) => handleChange(key, v)}
+              />
+            ) : (
+              <TextInput
+                style={[styles.input, multiline && styles.inputMulti]}
+                value={data[key]}
+                onChangeText={(v: string) => handleChange(key, v)}
+                placeholder={`${label}を入力`}
+                placeholderTextColor="#aaa"
+                multiline={multiline}
+              />
+            )}
+            {/* 病院名: 登録済みの候補から選択（手入力も可） */}
+            {key === 'hospitalName' && hospitalOpts.length > 0 && (
+              <View style={styles.chipSection}>
+                <Text style={styles.chipHint}>登録済みの病院名</Text>
+                <View style={styles.chipRow}>
+                  {hospitalOpts.map((opt: string, i: number) => (
+                    <TouchableOpacity
+                      key={`hosp-${i}`}
+                      style={styles.chip}
+                      onPress={() => handleChange('hospitalName', opt)}>
+                      <Text style={styles.chipText} numberOfLines={1}>
+                        {opt}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
             {/* 同じ項目に複数の候補があるときだけ選択肢を出す */}
             {options.length > 1 && (
               <View style={styles.chipSection}>

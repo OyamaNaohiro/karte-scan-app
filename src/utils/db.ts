@@ -51,8 +51,24 @@ export async function initDb(): Promise<void> {
     );`,
   );
   await addMissingColumns();
+  await normalizeStoredDates();
   initialized = true;
   await migrateLegacyJson();
+}
+
+// 既存の受注日・納品日をISO(YYYY-MM-DD)へ正規化する（スラッシュ→ハイフン）
+// ソート・範囲検索は文字列比較のため、区切り文字を揃える必要がある。
+async function normalizeStoredDates(): Promise<void> {
+  try {
+    await db().execute(
+      "UPDATE records SET orderDate = replace(orderDate, '/', '-') WHERE orderDate LIKE '%/%';",
+    );
+    await db().execute(
+      "UPDATE records SET deliveryDate = replace(deliveryDate, '/', '-') WHERE deliveryDate LIKE '%/%';",
+    );
+  } catch {
+    // 失敗しても致命的ではない
+  }
 }
 
 // 既存DBに後から追加した列を補う（重複エラーは無視）
@@ -141,6 +157,71 @@ export async function getAllRecords(): Promise<SavedRecord[]> {
     'SELECT * FROM records ORDER BY createdAt DESC;',
   );
   return rowsOf(res).map(rowToRecord);
+}
+
+export type SortKey = 'orderDate' | 'deliveryDate' | 'createdAt' | 'patientName';
+
+export interface RecordQuery {
+  search?: string;       // 氏名・病院名・病名・電話などの部分一致
+  hospital?: string;     // 病院名で完全一致絞り込み
+  orderFrom?: string;    // 受注日の下限（ISO）
+  orderTo?: string;      // 受注日の上限（ISO）
+  sortBy?: SortKey;
+  sortDir?: 'asc' | 'desc';
+}
+
+// 検索・絞り込み・ソート付きでレコードを取得
+export async function queryRecords(q: RecordQuery = {}): Promise<SavedRecord[]> {
+  await initDb();
+
+  const where: string[] = [];
+  const params: any[] = [];
+
+  if (q.search && q.search.trim()) {
+    const like = `%${q.search.trim()}%`;
+    where.push(
+      '(patientName LIKE ? OR hospitalName LIKE ? OR diagnosis LIKE ? OR prescription LIKE ? OR phone LIKE ? OR address LIKE ? OR doctor LIKE ?)',
+    );
+    params.push(like, like, like, like, like, like, like);
+  }
+  if (q.hospital) {
+    where.push('hospitalName = ?');
+    params.push(q.hospital);
+  }
+  if (q.orderFrom) {
+    where.push('orderDate >= ?');
+    params.push(q.orderFrom);
+  }
+  if (q.orderTo) {
+    where.push('orderDate <= ?');
+    params.push(q.orderTo);
+  }
+
+  // 列名はホワイトリストで固定（SQLインジェクション防止）
+  const sortCols: SortKey[] = ['orderDate', 'deliveryDate', 'createdAt', 'patientName'];
+  const sortBy: SortKey = sortCols.includes(q.sortBy as SortKey)
+    ? (q.sortBy as SortKey)
+    : 'createdAt';
+  const sortDir = q.sortDir === 'asc' ? 'ASC' : 'DESC';
+
+  const sql =
+    `SELECT * FROM records` +
+    (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
+    ` ORDER BY ${sortBy} ${sortDir};`;
+
+  const res = await db().execute(sql, params);
+  return rowsOf(res).map(rowToRecord);
+}
+
+// 登録済みの病院名一覧（重複なし）。オートコンプリート・絞り込み用。
+export async function getHospitalNames(): Promise<string[]> {
+  await initDb();
+  const res = await db().execute(
+    "SELECT DISTINCT hospitalName FROM records WHERE hospitalName IS NOT NULL AND hospitalName != '' ORDER BY hospitalName;",
+  );
+  return rowsOf(res)
+    .map(r => r.hospitalName as string)
+    .filter(Boolean);
 }
 
 // 1件取得

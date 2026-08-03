@@ -10,11 +10,11 @@ async function ensureDir(): Promise<void> {
   if (!exists) await RNFS.mkdir(RECORDS_DIR);
 }
 
-// 保存日（YYYY/MM/DD）
+// 保存日（ISO: YYYY-MM-DD。ソート・範囲検索のため区切りはハイフンで統一）
 function todayStr(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())}`;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 // base64画像配列からHTML文字列を生成

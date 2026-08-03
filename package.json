@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@op-engineering/op-sqlite": "^11.0.0",
+    "@react-native-community/datetimepicker": "^8.4.0",
     "react": "19.2.3",
     "react-native": "0.85.2",
     "react-native-fs": "^2.20.0",
