@@ -77,7 +77,10 @@ export function DateField({ value, onChange, placeholder }: Props) {
               <DateTimePicker
                 value={tempDate}
                 mode="date"
-                display="inline"
+                display="spinner"
+                themeVariant="light"
+                locale="ja-JP"
+                style={styles.picker}
                 onChange={(_event: unknown, date?: Date) => date && setTempDate(date)}
               />
               <View style={styles.modalActions}>
@@ -126,6 +129,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   modalCard: { backgroundColor: '#fff', borderRadius: 14, padding: 12 },
+  picker: { width: '100%', height: 216 },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
