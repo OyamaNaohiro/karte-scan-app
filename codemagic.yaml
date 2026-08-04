@@ -117,7 +117,11 @@ workflows:
 
           rm -rf ~/Library/Developer/Xcode/DerivedData/KarteScanApp-*
 
-          xcode-project use-profiles
+          # 署名対象はアプリ本体のプロジェクトのみに限定する。
+          # 既定の **/*.xcodeproj だと node_modules 内のライブラリ同梱プロジェクト
+          # (例: RNDateTimePicker.xcodeproj) にも署名しようとして失敗し、
+          # export_options.plist が生成されず build-ipa が止まるため。
+          xcode-project use-profiles --project "ios/KarteScanApp.xcodeproj"
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
