@@ -16,6 +16,29 @@ function db() {
   return connection;
 }
 
+// ファイルパスは相対（Documents配下）で保存し、読み出し時に現在のDocuments
+// パスへ組み立て直す。iOSのコンテナUUIDはアップデート等で変わりうるため、
+// 絶対パスをそのまま保存すると再インストール後にファイルを見失う。
+function toRelativePath(p: string): string {
+  if (!p) return '';
+  const docs = RNFS.DocumentDirectoryPath;
+  if (p.startsWith(docs + '/')) return p.slice(docs.length + 1);
+  const marker = '/Documents/';
+  const idx = p.indexOf(marker);
+  if (idx !== -1) return p.slice(idx + marker.length);
+  return p.replace(/^\/+/, '');
+}
+
+function toAbsolutePath(stored: string): string {
+  if (!stored) return '';
+  const docs = RNFS.DocumentDirectoryPath;
+  if (stored.startsWith(docs + '/')) return stored; // 既に現在の絶対パス
+  const marker = '/Documents/';
+  const idx = stored.indexOf(marker);
+  if (idx !== -1) return docs + '/' + stored.slice(idx + marker.length); // 旧UUIDの絶対パスを付け替え
+  return `${docs}/${stored.replace(/^\/+/, '')}`; // 相対パス
+}
+
 // バージョン差異を吸収して行配列を取り出す
 function rowsOf(result: any): any[] {
   const r = result?.rows;
@@ -101,17 +124,18 @@ function rowToRecord(row: any): SavedRecord {
     price: row.price ?? '',
     rawText: row.rawText ?? '',
   };
-  let imagePaths: string[] = [];
+  let rawImagePaths: string[] = [];
   try {
-    imagePaths = row.imagePaths ? JSON.parse(row.imagePaths) : [];
+    rawImagePaths = row.imagePaths ? JSON.parse(row.imagePaths) : [];
   } catch {
-    imagePaths = [];
+    rawImagePaths = [];
   }
   return {
     id: row.id,
     karteData,
-    pdfPath: row.pdfPath ?? '',
-    imagePaths,
+    // 保存値（相対/旧絶対）を現在のDocumentsパスへ解決
+    pdfPath: toAbsolutePath(row.pdfPath ?? ''),
+    imagePaths: rawImagePaths.map(toAbsolutePath),
     createdAt: row.createdAt ?? '',
   };
 }
@@ -143,8 +167,8 @@ export async function insertRecord(record: SavedRecord): Promise<void> {
       k.deliveryDate,
       k.price,
       k.rawText,
-      record.pdfPath,
-      JSON.stringify(record.imagePaths),
+      toRelativePath(record.pdfPath),
+      JSON.stringify(record.imagePaths.map(toRelativePath)),
       record.createdAt,
     ],
   );
