@@ -20,18 +20,9 @@ interface Props {
 // カレンダー選択と手入力の両対応。値は常に ISO(YYYY-MM-DD) で親へ渡す。
 export function DateField({ value, onChange, placeholder }: Props) {
   const [showPicker, setShowPicker] = useState(false);
-  // iOSはモーダル内で選択確定するため一時値を保持
-  const [tempDate, setTempDate] = useState<Date>(() => fromISO(value));
 
-  function openPicker() {
-    setTempDate(fromISO(value));
-    setShowPicker(true);
-  }
-
-  function confirmIOS() {
-    onChange(toISO(tempDate));
-    setShowPicker(false);
-  }
+  // スピナーで選んだ日付は即座に親の値へ反映する（value経由で入力欄に表示）
+  const pickerDate = fromISO(value);
 
   return (
     <View style={styles.row}>
@@ -44,7 +35,7 @@ export function DateField({ value, onChange, placeholder }: Props) {
         placeholderTextColor="#aaa"
         keyboardType="numbers-and-punctuation"
       />
-      <TouchableOpacity style={styles.calBtn} onPress={openPicker}>
+      <TouchableOpacity style={styles.calBtn} onPress={() => setShowPicker(true)}>
         <Text style={styles.calBtnText}>📅</Text>
       </TouchableOpacity>
       {value ? (
@@ -53,10 +44,10 @@ export function DateField({ value, onChange, placeholder }: Props) {
         </TouchableOpacity>
       ) : null}
 
-      {/* Android: そのまま出して選択で確定。iOS: モーダルで確定 */}
+      {/* Android: ダイアログで選択して確定 */}
       {showPicker && Platform.OS === 'android' && (
         <DateTimePicker
-          value={fromISO(value)}
+          value={pickerDate}
           mode="date"
           display="default"
           onChange={(_event: unknown, date?: Date) => {
@@ -66,6 +57,7 @@ export function DateField({ value, onChange, placeholder }: Props) {
         />
       )}
 
+      {/* iOS: モーダル内スピナー。選択即反映、「閉じる」で終了 */}
       {Platform.OS === 'ios' && (
         <Modal
           visible={showPicker}
@@ -75,20 +67,19 @@ export function DateField({ value, onChange, placeholder }: Props) {
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
               <DateTimePicker
-                value={tempDate}
+                value={pickerDate}
                 mode="date"
                 display="spinner"
                 themeVariant="light"
                 locale="ja-JP"
                 style={styles.picker}
-                onChange={(_event: unknown, date?: Date) => date && setTempDate(date)}
+                onChange={(_event: unknown, date?: Date) =>
+                  date && onChange(toISO(date))
+                }
               />
               <View style={styles.modalActions}>
                 <TouchableOpacity onPress={() => setShowPicker(false)}>
-                  <Text style={styles.modalCancel}>キャンセル</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={confirmIOS}>
-                  <Text style={styles.modalOk}>決定</Text>
+                  <Text style={styles.modalOk}>閉じる</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -137,6 +128,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
   },
-  modalCancel: { fontSize: 16, color: '#888', fontWeight: '600' },
   modalOk: { fontSize: 16, color: '#2563EB', fontWeight: '700' },
 });
