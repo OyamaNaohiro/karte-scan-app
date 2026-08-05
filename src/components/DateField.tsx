@@ -17,14 +17,18 @@ interface Props {
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
-// その月のカレンダーセル（先頭の空白 + 1〜末日）を作る
-function buildCells(year: number, month: number): (number | null)[] {
+// その月のカレンダーを週（7日）ごとの配列にして返す。
+// 先頭は前月ぶんの空白、末尾も7の倍数になるよう空白で埋める。
+function buildWeeks(year: number, month: number): (number | null)[][] {
   const startDow = new Date(year, month, 1).getDay();
   const days = new Date(year, month + 1, 0).getDate();
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
   for (let d = 1; d <= days; d++) cells.push(d);
-  return cells;
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks: (number | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
 }
 
 // カレンダー選択と手入力の両対応。値は常に ISO(YYYY-MM-DD) で親へ渡す。
@@ -56,7 +60,7 @@ export function DateField({ value, onChange, placeholder }: Props) {
     setOpen(false);
   }
 
-  const cells = buildCells(viewYear, viewMonth);
+  const weeks = buildWeeks(viewYear, viewMonth);
   const selected = value ? fromISO(value) : null;
   const isSelected = (day: number) =>
     !!selected &&
@@ -128,30 +132,30 @@ export function DateField({ value, onChange, placeholder }: Props) {
               ))}
             </View>
 
-            {/* 日付グリッド */}
-            <View style={styles.grid}>
-              {cells.map((day, i) => (
-                <View key={i} style={styles.dayCellWrap}>
-                  {day === null ? (
-                    <View style={styles.dayCell} />
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.dayCell, isSelected(day) && styles.daySelected]}
-                      onPress={() => pick(day)}>
-                      <Text
-                        style={[
-                          styles.dayText,
-                          i % 7 === 0 && styles.sun,
-                          i % 7 === 6 && styles.sat,
-                          isSelected(day) && styles.daySelectedText,
-                        ]}>
-                        {day}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))}
-            </View>
+            {/* 日付グリッド（1週=7列を行ごとに描画） */}
+            {weeks.map((week, wi) => (
+              <View key={wi} style={styles.weekRow}>
+                {week.map((day, ci) => (
+                  <View key={ci} style={styles.dayCellWrap}>
+                    {day === null ? null : (
+                      <TouchableOpacity
+                        style={[styles.dayCell, isSelected(day) && styles.daySelected]}
+                        onPress={() => pick(day)}>
+                        <Text
+                          style={[
+                            styles.dayText,
+                            ci === 0 && styles.sun,
+                            ci === 6 && styles.sat,
+                            isSelected(day) && styles.daySelectedText,
+                          ]}>
+                          {day}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </View>
+            ))}
 
             <View style={styles.footer}>
               <TouchableOpacity
@@ -172,8 +176,6 @@ export function DateField({ value, onChange, placeholder }: Props) {
     </View>
   );
 }
-
-const CELL = `${100 / 7}%`;
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
@@ -216,14 +218,13 @@ const styles = StyleSheet.create({
   navTitle: { fontSize: 16, fontWeight: '700', color: '#111' },
   weekRow: { flexDirection: 'row' },
   weekCell: {
-    width: CELL,
+    flex: 1,
     textAlign: 'center',
     fontSize: 12,
     color: '#666',
     paddingVertical: 4,
   },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCellWrap: { width: CELL, alignItems: 'center', paddingVertical: 2 },
+  dayCellWrap: { flex: 1, alignItems: 'center', paddingVertical: 2 },
   dayCell: {
     width: 38,
     height: 38,
