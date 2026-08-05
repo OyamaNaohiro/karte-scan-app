@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Modal,
   Platform,
   StyleSheet,
 } from 'react-native';
@@ -19,9 +18,7 @@ interface Props {
 
 // カレンダー選択と手入力の両対応。値は常に ISO(YYYY-MM-DD) で親へ渡す。
 export function DateField({ value, onChange, placeholder }: Props) {
-  const [showPicker, setShowPicker] = useState(false);
-
-  // スピナーで選んだ日付は即座に親の値へ反映する（value経由で入力欄に表示）
+  const [showPicker, setShowPicker] = useState(false); // Android用
   const pickerDate = fromISO(value);
 
   return (
@@ -35,16 +32,26 @@ export function DateField({ value, onChange, placeholder }: Props) {
         placeholderTextColor="#aaa"
         keyboardType="numbers-and-punctuation"
       />
-      <TouchableOpacity style={styles.calBtn} onPress={() => setShowPicker(true)}>
-        <Text style={styles.calBtnText}>📅</Text>
-      </TouchableOpacity>
-      {value ? (
-        <TouchableOpacity style={styles.clearBtn} onPress={() => onChange('')}>
-          <Text style={styles.clearText}>×</Text>
-        </TouchableOpacity>
-      ) : null}
 
-      {/* Android: ダイアログで選択して確定 */}
+      {/* iOS: コンパクト表示。タップでネイティブのカレンダーが開き、選択が即反映される */}
+      {Platform.OS === 'ios' && (
+        <DateTimePicker
+          value={pickerDate}
+          mode="date"
+          display="compact"
+          themeVariant="light"
+          locale="ja-JP"
+          style={styles.compact}
+          onChange={(_event: unknown, date?: Date) => date && onChange(toISO(date))}
+        />
+      )}
+
+      {/* Android: ボタン→ダイアログ */}
+      {Platform.OS === 'android' && (
+        <TouchableOpacity style={styles.calBtn} onPress={() => setShowPicker(true)}>
+          <Text style={styles.calBtnText}>📅</Text>
+        </TouchableOpacity>
+      )}
       {showPicker && Platform.OS === 'android' && (
         <DateTimePicker
           value={pickerDate}
@@ -57,35 +64,11 @@ export function DateField({ value, onChange, placeholder }: Props) {
         />
       )}
 
-      {/* iOS: モーダル内スピナー。選択即反映、「閉じる」で終了 */}
-      {Platform.OS === 'ios' && (
-        <Modal
-          visible={showPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowPicker(false)}>
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <DateTimePicker
-                value={pickerDate}
-                mode="date"
-                display="spinner"
-                themeVariant="light"
-                locale="ja-JP"
-                style={styles.picker}
-                onChange={(_event: unknown, date?: Date) =>
-                  date && onChange(toISO(date))
-                }
-              />
-              <View style={styles.modalActions}>
-                <TouchableOpacity onPress={() => setShowPicker(false)}>
-                  <Text style={styles.modalOk}>閉じる</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
+      {value ? (
+        <TouchableOpacity style={styles.clearBtn} onPress={() => onChange('')}>
+          <Text style={styles.clearText}>×</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -103,6 +86,7 @@ const styles = StyleSheet.create({
     color: '#111',
     backgroundColor: '#fafafa',
   },
+  compact: { marginLeft: 8 },
   calBtn: {
     marginLeft: 8,
     paddingHorizontal: 10,
@@ -113,20 +97,4 @@ const styles = StyleSheet.create({
   calBtnText: { fontSize: 18 },
   clearBtn: { marginLeft: 4, paddingHorizontal: 8, paddingVertical: 6 },
   clearText: { fontSize: 18, color: '#999' },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  modalCard: { backgroundColor: '#fff', borderRadius: 14, padding: 12 },
-  picker: { width: '100%', height: 216 },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 24,
-    paddingHorizontal: 12,
-    paddingTop: 8,
-  },
-  modalOk: { fontSize: 16, color: '#2563EB', fontWeight: '700' },
 });
