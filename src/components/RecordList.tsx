@@ -12,9 +12,11 @@ import {
 import { queryRecords, getHospitalNames, SortKey } from '../utils/db';
 import { SavedRecord } from '../types';
 import { DateField } from './DateField';
+import { formatYen } from '../utils/format';
 
 interface Props {
   onSelect: (record: SavedRecord) => void;
+  onOpenSummary: () => void;
 }
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -31,7 +33,7 @@ function formatDateTime(iso: string): string {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export function RecordList({ onSelect }: Props) {
+export function RecordList({ onSelect, onOpenSummary }: Props) {
   const [records, setRecords] = useState<SavedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [hospitals, setHospitals] = useState<string[]>([]);
@@ -82,6 +84,9 @@ export function RecordList({ onSelect }: Props) {
 
   const header = (
     <View style={styles.controls}>
+      <TouchableOpacity style={styles.summaryBtn} onPress={onOpenSummary}>
+        <Text style={styles.summaryBtnText}>📊 金額の集計を見る</Text>
+      </TouchableOpacity>
       <TextInput
         style={styles.search}
         value={search}
@@ -206,6 +211,9 @@ export function RecordList({ onSelect }: Props) {
               保存 {formatDateTime(item.createdAt)}
             </Text>
           </View>
+          {!!item.karteData.price && (
+            <Text style={styles.rowPrice}>{formatYen(item.karteData.price)}</Text>
+          )}
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
       )}
@@ -216,6 +224,20 @@ export function RecordList({ onSelect }: Props) {
 const styles = StyleSheet.create({
   listContent: { padding: 16 },
   controls: { marginBottom: 8 },
+  summaryBtn: {
+    backgroundColor: '#eef2ff',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  summaryBtnText: { color: '#2563EB', fontSize: 15, fontWeight: '700' },
+  rowPrice: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111',
+    marginLeft: 8,
+  },
   search: {
     borderWidth: 1,
     borderColor: '#ddd',

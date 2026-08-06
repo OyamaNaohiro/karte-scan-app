@@ -17,6 +17,7 @@ import { saveRecord, savePdfOnly } from './utils/fileStorage';
 import { KarteForm, NerCandidates } from './components/KarteForm';
 import { RecordList } from './components/RecordList';
 import { RecordDetail } from './components/RecordDetail';
+import { SummaryScreen } from './components/SummaryScreen';
 import { KarteData, KarteCandidates, SavedRecord } from './types';
 
 type AppState =
@@ -27,7 +28,8 @@ type AppState =
   | 'saving'
   | 'done'
   | 'list'
-  | 'detail';
+  | 'detail'
+  | 'summary';
 type ScanMode = 'ocr' | 'pdf';
 
 // 1枚（1書類）分の確認用データ
@@ -164,7 +166,7 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
-        {appState === 'detail' ? (
+        {appState === 'detail' || appState === 'summary' ? (
           <TouchableOpacity onPress={() => setAppState('list')} style={styles.resetBtn}>
             <Text style={styles.resetText}>‹ 一覧</Text>
           </TouchableOpacity>
@@ -176,6 +178,9 @@ export default function App() {
               ? `確認 ${currentIndex + 1} / ${documents.length}`
               : 'カルテスキャン'}
           </Text>
+        )}
+        {appState === 'summary' && (
+          <Text style={styles.headerTitle}>金額の集計</Text>
         )}
         {(appState === 'review' || appState === 'pdf-review') && (
           <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
@@ -225,8 +230,12 @@ export default function App() {
               setSelectedRecord(record);
               setAppState('detail');
             }}
+            onOpenSummary={() => setAppState('summary')}
           />
         )}
+
+        {/* 金額の集計 */}
+        {appState === 'summary' && <SummaryScreen />}
 
         {/* 記録詳細 */}
         {appState === 'detail' && selectedRecord && (
