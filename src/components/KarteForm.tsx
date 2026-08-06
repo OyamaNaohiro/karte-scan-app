@@ -10,6 +10,7 @@ import {
 import { KarteData, KarteField, KarteCandidates } from '../types';
 import { DateField } from './DateField';
 import { getHospitalNames } from '../utils/db';
+import { formatYen, digitsOnly } from '../utils/format';
 
 export interface NerCandidates {
   personNames: string[];
@@ -24,7 +25,7 @@ interface Props {
   ner?: NerCandidates;
 }
 
-type FieldType = 'text' | 'date';
+type FieldType = 'text' | 'date' | 'price';
 const FIELDS: {
   key: KarteField;
   label: string;
@@ -43,7 +44,7 @@ const FIELDS: {
   { key: 'prescription', label: '処方装具名', multiline: true },
   { key: 'orderDate', label: '受注日', type: 'date' },
   { key: 'deliveryDate', label: '納品日', type: 'date' },
-  { key: 'price', label: '装具代金' },
+  { key: 'price', label: '装具代金', type: 'price' },
 ];
 
 export function KarteForm({ data, onChange, candidates, ner }: Props) {
@@ -84,6 +85,20 @@ export function KarteForm({ data, onChange, candidates, ner }: Props) {
                 value={data[key]}
                 onChange={(v: string) => handleChange(key, v)}
               />
+            ) : type === 'price' ? (
+              <View>
+                <TextInput
+                  style={styles.input}
+                  value={data[key]}
+                  onChangeText={(v: string) => handleChange(key, digitsOnly(v))}
+                  placeholder="金額を入力（数字のみ）"
+                  placeholderTextColor="#aaa"
+                  keyboardType="number-pad"
+                />
+                {!!data[key] && (
+                  <Text style={styles.pricePreview}>{formatYen(data[key])}</Text>
+                )}
+              </View>
             ) : (
               <TextInput
                 style={[styles.input, multiline && styles.inputMulti]}
@@ -272,6 +287,12 @@ const styles = StyleSheet.create({
   inputMulti: {
     minHeight: 72,
     textAlignVertical: 'top',
+  },
+  pricePreview: {
+    marginTop: 4,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111',
   },
   chipSection: {
     marginTop: 8,

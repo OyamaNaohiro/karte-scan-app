@@ -12,6 +12,7 @@ import {
 import { SavedRecord, KarteData } from '../types';
 import { deleteRecord, insertRecord } from '../utils/db';
 import { KarteForm } from './KarteForm';
+import { formatYen } from '../utils/format';
 
 interface Props {
   record: SavedRecord;
@@ -120,7 +121,9 @@ export function RecordDetail({ record, onDeleted, onUpdated }: Props) {
           <View key={key} style={styles.tableRow}>
             <Text style={styles.tableLabel}>{label}</Text>
             <Text style={styles.tableValue} selectable>
-              {data[key] || '—'}
+              {key === 'price'
+                ? formatYen(data[key]) || '—'
+                : data[key] || '—'}
             </Text>
           </View>
         ))}

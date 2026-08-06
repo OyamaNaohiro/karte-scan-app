@@ -2,6 +2,7 @@ import RNFS from 'react-native-fs';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import { KarteData, SavedRecord } from '../types';
 import { insertRecord, getAllRecords } from './db';
+import { formatYen } from './format';
 
 const RECORDS_DIR = `${RNFS.DocumentDirectoryPath}/karteRecords`;
 
@@ -52,7 +53,7 @@ function buildHtml(karteData: KarteData, pageImages: string[]): string {
     <tr><td>処方装具名</td><td>${karteData.prescription || '—'}</td></tr>
     <tr><td>受注日</td><td>${karteData.orderDate || '—'}</td></tr>
     <tr><td>納品日</td><td>${karteData.deliveryDate || '—'}</td></tr>
-    <tr><td>装具代金</td><td>${karteData.price || '—'}</td></tr>
+    <tr><td>装具代金</td><td>${formatYen(karteData.price) || '—'}</td></tr>
   </table>
   <div class="page-title">スキャン画像</div>
   ${imagesHtml}
