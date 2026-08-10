@@ -3,11 +3,17 @@ import {
   View,
   Text,
   ScrollView,
+  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   StyleSheet,
 } from 'react-native';
-import { computeSummary, SummaryResult, SummaryRow } from '../utils/summary';
+import {
+  computeSummary,
+  SummaryResult,
+  SummaryRow,
+  HospitalMonthly,
+} from '../utils/summary';
 import { formatYen } from '../utils/format';
 
 // YYYY-MM → "YYYY年M月"
@@ -43,6 +49,54 @@ function Section({
             <Text style={styles.rowTotal}>{formatYen(String(row.total))}</Text>
           </View>
         ))
+      )}
+    </View>
+  );
+}
+
+// 病院ごとの月別内訳（タップで開閉）
+function HospitalMonthlySection({ rows }: { rows: HospitalMonthly[] }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>病院別（月別内訳）</Text>
+      {rows.length === 0 ? (
+        <Text style={styles.empty}>データがありません。</Text>
+      ) : (
+        rows.map(h => {
+          const open = !!expanded[h.hospital];
+          return (
+            <View key={h.hospital} style={styles.group}>
+              <TouchableOpacity
+                style={styles.row}
+                onPress={() =>
+                  setExpanded(e => ({ ...e, [h.hospital]: !e[h.hospital] }))
+                }>
+                <View style={styles.rowLeft}>
+                  <Text style={styles.rowKey} numberOfLines={1}>
+                    {open ? '▼ ' : '▶ '}
+                    {h.hospital}
+                  </Text>
+                  <Text style={styles.rowCount}>{h.count}件</Text>
+                </View>
+                <Text style={styles.rowTotal}>{formatYen(String(h.total))}</Text>
+              </TouchableOpacity>
+              {open &&
+                h.months.map(m => (
+                  <View key={m.key} style={styles.subRow}>
+                    <View style={styles.rowLeft}>
+                      <Text style={styles.subKey}>{monthLabel(m.key)}</Text>
+                      <Text style={styles.rowCount}>{m.count}件</Text>
+                    </View>
+                    <Text style={styles.subTotal}>
+                      {formatYen(String(m.total))}
+                    </Text>
+                  </View>
+                ))}
+            </View>
+          );
+        })
       )}
     </View>
   );
@@ -91,6 +145,7 @@ export function SummaryScreen() {
         rows={data?.byMonth ?? []}
         labelOf={monthLabel}
       />
+      <HospitalMonthlySection rows={data?.byHospitalMonth ?? []} />
     </ScrollView>
   );
 }
@@ -132,4 +187,18 @@ const styles = StyleSheet.create({
   rowKey: { fontSize: 15, fontWeight: '600', color: '#111' },
   rowCount: { fontSize: 12, color: '#888', marginTop: 2 },
   rowTotal: { fontSize: 16, fontWeight: '700', color: '#111' },
+  group: { marginBottom: 8 },
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderLeftWidth: 2,
+    borderLeftColor: '#c7d2e0',
+    marginLeft: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  subKey: { fontSize: 14, color: '#333' },
+  subTotal: { fontSize: 14, fontWeight: '600', color: '#333' },
 });
