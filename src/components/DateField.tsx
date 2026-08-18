@@ -7,7 +7,7 @@ import {
   Modal,
   StyleSheet,
 } from 'react-native';
-import { toISO, fromISO, normalizeDateInput } from '../utils/date';
+import { toISO, fromISO, normalizeDateInput, isValidISODate } from '../utils/date';
 
 interface Props {
   value: string; // ISO(YYYY-MM-DD) or ''
@@ -36,6 +36,7 @@ function buildWeeks(year: number, month: number): (number | null)[][] {
 // JSだけで実装したカレンダーで確実に反映させる。
 export function DateField({ value, onChange, placeholder }: Props) {
   const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const base = fromISO(value);
   const [viewYear, setViewYear] = useState(base.getFullYear());
   const [viewMonth, setViewMonth] = useState(base.getMonth()); // 0-11
@@ -68,13 +69,21 @@ export function DateField({ value, onChange, placeholder }: Props) {
     selected.getMonth() === viewMonth &&
     selected.getDate() === day;
 
+  // 入力中でなく、値があるのにISO日付でない＝並び替えできない形式
+  const invalid = !focused && !!value && !isValidISODate(value);
+
   return (
+    <View>
     <View style={styles.row}>
       <TextInput
-        style={styles.input}
+        style={[styles.input, invalid && styles.inputInvalid]}
         value={value}
         onChangeText={(v: string) => onChange(v)}
-        onBlur={() => value && onChange(normalizeDateInput(value))}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false);
+          if (value) onChange(normalizeDateInput(value));
+        }}
         placeholder={placeholder ?? 'YYYY-MM-DD'}
         placeholderTextColor="#aaa"
         keyboardType="numbers-and-punctuation"
@@ -174,6 +183,13 @@ export function DateField({ value, onChange, placeholder }: Props) {
         </TouchableOpacity>
       </Modal>
     </View>
+    {invalid && (
+      <Text style={styles.warning}>
+        日付の形式が正しくありません。並び替え・集計が正しく行われない場合が
+        あります（例: 2026-08-07）。📅から選び直すと確実です。
+      </Text>
+    )}
+    </View>
   );
 }
 
@@ -190,6 +206,8 @@ const styles = StyleSheet.create({
     color: '#111',
     backgroundColor: '#fafafa',
   },
+  inputInvalid: { borderColor: '#dc2626', backgroundColor: '#fef2f2' },
+  warning: { marginTop: 4, fontSize: 12, color: '#dc2626', lineHeight: 17 },
   calBtn: {
     marginLeft: 8,
     paddingHorizontal: 10,

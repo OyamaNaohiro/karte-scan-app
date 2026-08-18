@@ -14,11 +14,46 @@ export function fromISO(s: string): Date {
   return new Date();
 }
 
-// 手入力を ISO へ正規化（YYYY/MM/DD・YYYY.M.D 等 → YYYY-MM-DD）
-// 変換できない入力はそのまま返す（自由入力を許容）
+// 実在する YYYY-MM-DD かどうか（ソート可能な正規形か）
+export function isValidISODate(s: string): boolean {
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(y, mo - 1, d);
+  return (
+    dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d
+  );
+}
+
+function toIsoParts(y: string, mo: string, d: string): string {
+  return `${y}-${pad(Number(mo))}-${pad(Number(d))}`;
+}
+
+// 手入力を ISO へ正規化する。
+// 対応: 全角数字 / YYYY-MM-DD・YYYY/MM/DD・YYYY.MM.DD・空白区切り /
+//       YYYY年M月D日 / YYYYMMDD(8桁)
+// 実在する日付に変換できたときだけ ISO を返し、できなければ入力をそのまま返す
+// （呼び出し側で不正として警告表示する）。
 export function normalizeDateInput(s: string): string {
-  const t = s.trim();
-  const m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
-  if (m) return `${m[1]}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
-  return t;
+  let t = (s ?? '').trim();
+  if (!t) return '';
+  // 全角数字→半角
+  t = t.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+
+  const patterns: RegExp[] = [
+    /^(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?$/,
+    /^(\d{4})[\/\-.\s](\d{1,2})[\/\-.\s](\d{1,2})$/,
+    /^(\d{4})(\d{2})(\d{2})$/,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m) {
+      const iso = toIsoParts(m[1], m[2], m[3]);
+      if (isValidISODate(iso)) return iso;
+    }
+  }
+  return t; // 変換不能はそのまま（警告で気づかせる）
 }
