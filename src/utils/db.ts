@@ -228,10 +228,12 @@ export async function queryRecords(q: RecordQuery = {}): Promise<SavedRecord[]> 
     : 'createdAt';
   const sortDir = q.sortDir === 'asc' ? 'ASC' : 'DESC';
 
+  // 空欄(NULL/'')は方向に関わらず常に末尾へ。日付は同値時 createdAt で安定化。
+  const emptyLast = `(${sortBy} IS NULL OR ${sortBy} = '')`;
   const sql =
     `SELECT * FROM records` +
     (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
-    ` ORDER BY ${sortBy} ${sortDir};`;
+    ` ORDER BY ${emptyLast} ASC, ${sortBy} ${sortDir}, createdAt DESC;`;
 
   const res = await db().execute(sql, params);
   return rowsOf(res).map(rowToRecord);
