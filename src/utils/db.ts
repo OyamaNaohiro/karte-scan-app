@@ -276,40 +276,60 @@ export async function deleteRecord(id: string): Promise<void> {
       }),
     );
   }
+
+  // 旧JSONが残っていると次回起動で復活するため、あれば削除する
+  try {
+    const legacyJson = `${RECORDS_DIR}/${id}.json`;
+    if (await RNFS.exists(legacyJson)) await RNFS.unlink(legacyJson);
+  } catch {
+    // 無視
+  }
 }
 
-// 旧バージョンの1件1JSONファイルをDBへ取り込む（初回のみ・冪等）
+// 旧バージョンの1件1JSONファイルをDBへ取り込む（初回のみ）。
+// 取り込んだJSONは削除し、二度と再取り込みしない（削除したレコードの復活防止）。
+// 既にDBへ移行済み（レコードあり）の場合は、残っているJSONは古い残骸なので
+// 取り込まずに掃除だけ行う。
 async function migrateLegacyJson(): Promise<void> {
   try {
     if (!(await RNFS.exists(RECORDS_DIR))) return;
     const files = await RNFS.readDir(RECORDS_DIR);
     const jsonFiles = files.filter(f => f.name.endsWith('.json'));
+    if (jsonFiles.length === 0) return;
+
+    // DBに1件でもあれば「移行済み」とみなし、再取り込みしない
+    const countRes = await db().execute('SELECT COUNT(*) AS c FROM records;');
+    const alreadyMigrated = Number(rowsOf(countRes)[0]?.c ?? 0) > 0;
+
     for (const f of jsonFiles) {
       try {
-        const content = await RNFS.readFile(f.path, 'utf8');
-        const legacy = JSON.parse(content) as Partial<SavedRecord> & {
-          karteData: KarteData;
-        };
-        if (!legacy.id) continue;
-        const existing = await getRecord(legacy.id);
-        if (existing) continue;
-        // 旧JSONに無い手入力項目は空で補完
-        const base: KarteData = {
-          patientName: '', birthDate: '', gender: '', address: '',
-          phone: '', insurance: '',
-          hospitalName: '', diagnosis: '', doctor: '', prescription: '',
-          orderDate: '', deliveryDate: '', price: '', rawText: '',
-        };
-        const karteData: KarteData = { ...base, ...legacy.karteData };
-        await insertRecord({
-          id: legacy.id,
-          karteData,
-          pdfPath: legacy.pdfPath ?? '',
-          imagePaths: legacy.imagePaths ?? [],
-          createdAt: legacy.createdAt ?? new Date().toISOString(),
-        });
+        if (!alreadyMigrated) {
+          const content = await RNFS.readFile(f.path, 'utf8');
+          const legacy = JSON.parse(content) as Partial<SavedRecord> & {
+            karteData: KarteData;
+          };
+          if (legacy.id && !(await getRecord(legacy.id))) {
+            // 旧JSONに無い手入力項目は空で補完
+            const base: KarteData = {
+              patientName: '', birthDate: '', gender: '', address: '',
+              phone: '', insurance: '',
+              hospitalName: '', diagnosis: '', doctor: '', prescription: '',
+              orderDate: '', deliveryDate: '', price: '', rawText: '',
+            };
+            const karteData: KarteData = { ...base, ...legacy.karteData };
+            await insertRecord({
+              id: legacy.id,
+              karteData,
+              pdfPath: legacy.pdfPath ?? '',
+              imagePaths: legacy.imagePaths ?? [],
+              createdAt: legacy.createdAt ?? new Date().toISOString(),
+            });
+          }
+        }
+        // 取り込み済み・掃除対象いずれもJSONを削除して復活を防ぐ
+        await RNFS.unlink(f.path);
       } catch {
-        // 壊れたJSONはスキップ
+        // 壊れたJSON等はスキップ
       }
     }
   } catch {
