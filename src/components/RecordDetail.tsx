@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
+  Dimensions,
   StyleSheet,
 } from 'react-native';
 import { SavedRecord, KarteData } from '../types';
@@ -36,8 +38,11 @@ const FIELDS: { key: keyof KarteData; label: string }[] = [
   { key: 'price', label: '装具代金' },
 ];
 
+const SCREEN = Dimensions.get('window');
+
 export function RecordDetail({ record, onDeleted, onUpdated }: Props) {
   const [editing, setEditing] = useState(false);
+  const [zoomUri, setZoomUri] = useState<string | null>(null);
   const [data, setData] = useState<KarteData>(record.karteData);
   const [saving, setSaving] = useState(false);
 
@@ -131,14 +136,18 @@ export function RecordDetail({ record, onDeleted, onUpdated }: Props) {
 
       {record.imagePaths.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>スキャン画像</Text>
+          <Text style={styles.sectionTitle}>スキャン画像（タップで拡大）</Text>
           {record.imagePaths.map((path, i) => (
-            <Image
+            <TouchableOpacity
               key={i}
-              source={{ uri: `file://${path}` }}
-              style={styles.image}
-              resizeMode="contain"
-            />
+              activeOpacity={0.8}
+              onPress={() => setZoomUri(`file://${path}`)}>
+              <Image
+                source={{ uri: `file://${path}` }}
+                style={styles.image}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
           ))}
         </>
       )}
@@ -151,6 +160,37 @@ export function RecordDetail({ record, onDeleted, onUpdated }: Props) {
       <TouchableOpacity style={styles.deleteBtn} onPress={confirmDelete}>
         <Text style={styles.deleteText}>この記録を削除</Text>
       </TouchableOpacity>
+
+      {/* 画像の全画面ズーム表示（ピンチで拡大／ダブルタップ不要） */}
+      <Modal
+        visible={!!zoomUri}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={() => setZoomUri(null)}>
+        <View style={styles.zoomContainer}>
+          <ScrollView
+            style={styles.flex}
+            contentContainerStyle={styles.zoomContent}
+            maximumZoomScale={5}
+            minimumZoomScale={1}
+            centerContent
+            showsHorizontalScrollIndicator={false}
+            showsVerticalScrollIndicator={false}>
+            {zoomUri && (
+              <Image
+                source={{ uri: zoomUri }}
+                style={styles.zoomImage}
+                resizeMode="contain"
+              />
+            )}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.zoomClose}
+            onPress={() => setZoomUri(null)}>
+            <Text style={styles.zoomCloseText}>✕ 閉じる</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -229,6 +269,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteText: { color: '#dc2626', fontSize: 15, fontWeight: '700' },
+  zoomContainer: { flex: 1, backgroundColor: '#000' },
+  zoomContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomImage: { width: SCREEN.width, height: SCREEN.height },
+  zoomClose: {
+    position: 'absolute',
+    top: 48,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  zoomCloseText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   actionBar: {
     flexDirection: 'row',
     paddingHorizontal: 20,

@@ -17,6 +17,7 @@ import { formatYen } from '../utils/format';
 interface Props {
   onSelect: (record: SavedRecord) => void;
   onOpenSummary: () => void;
+  onOpenDeliveryCalendar: () => void;
 }
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
@@ -33,7 +34,11 @@ function formatDateTime(iso: string): string {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export function RecordList({ onSelect, onOpenSummary }: Props) {
+export function RecordList({
+  onSelect,
+  onOpenSummary,
+  onOpenDeliveryCalendar,
+}: Props) {
   const [records, setRecords] = useState<SavedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [hospitals, setHospitals] = useState<string[]>([]);
@@ -84,9 +89,18 @@ export function RecordList({ onSelect, onOpenSummary }: Props) {
 
   const header = (
     <View style={styles.controls}>
-      <TouchableOpacity style={styles.summaryBtn} onPress={onOpenSummary}>
-        <Text style={styles.summaryBtnText}>📊 金額の集計を見る</Text>
-      </TouchableOpacity>
+      <View style={styles.topBtnRow}>
+        <TouchableOpacity
+          style={[styles.topBtn, styles.summaryBtn]}
+          onPress={onOpenSummary}>
+          <Text style={styles.summaryBtnText}>📊 金額の集計</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.topBtn, styles.calendarBtn]}
+          onPress={onOpenDeliveryCalendar}>
+          <Text style={styles.calendarBtnText}>📅 納品カレンダー</Text>
+        </TouchableOpacity>
+      </View>
       <TextInput
         style={styles.search}
         value={search}
@@ -224,14 +238,18 @@ export function RecordList({ onSelect, onOpenSummary }: Props) {
 const styles = StyleSheet.create({
   listContent: { padding: 16 },
   controls: { marginBottom: 8 },
-  summaryBtn: {
-    backgroundColor: '#eef2ff',
+  topBtnRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  topBtn: {
+    flex: 1,
     borderRadius: 10,
     paddingVertical: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
-    marginBottom: 12,
   },
-  summaryBtnText: { color: '#2563EB', fontSize: 15, fontWeight: '700' },
+  summaryBtn: { backgroundColor: '#eef2ff' },
+  summaryBtnText: { color: '#2563EB', fontSize: 14, fontWeight: '700' },
+  calendarBtn: { backgroundColor: '#fff7ed' },
+  calendarBtnText: { color: '#c2410c', fontSize: 14, fontWeight: '700' },
   rowPrice: {
     fontSize: 15,
     fontWeight: '700',

@@ -18,6 +18,7 @@ import { KarteForm, NerCandidates } from './components/KarteForm';
 import { RecordList } from './components/RecordList';
 import { RecordDetail } from './components/RecordDetail';
 import { SummaryScreen } from './components/SummaryScreen';
+import { DeliveryCalendarScreen } from './components/DeliveryCalendarScreen';
 import { KarteData, KarteCandidates, SavedRecord } from './types';
 
 type AppState =
@@ -29,7 +30,8 @@ type AppState =
   | 'done'
   | 'list'
   | 'detail'
-  | 'summary';
+  | 'summary'
+  | 'delivery';
 type ScanMode = 'ocr' | 'pdf';
 
 // 1枚（1書類）分の確認用データ
@@ -166,7 +168,9 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
-        {appState === 'detail' || appState === 'summary' ? (
+        {appState === 'detail' ||
+        appState === 'summary' ||
+        appState === 'delivery' ? (
           <TouchableOpacity onPress={() => setAppState('list')} style={styles.resetBtn}>
             <Text style={styles.resetText}>‹ 一覧</Text>
           </TouchableOpacity>
@@ -181,6 +185,9 @@ export default function App() {
         )}
         {appState === 'summary' && (
           <Text style={styles.headerTitle}>金額の集計</Text>
+        )}
+        {appState === 'delivery' && (
+          <Text style={styles.headerTitle}>納品カレンダー</Text>
         )}
         {(appState === 'review' || appState === 'pdf-review') && (
           <TouchableOpacity onPress={handleReset} style={styles.resetBtn}>
@@ -231,11 +238,22 @@ export default function App() {
               setAppState('detail');
             }}
             onOpenSummary={() => setAppState('summary')}
+            onOpenDeliveryCalendar={() => setAppState('delivery')}
           />
         )}
 
         {/* 金額の集計 */}
         {appState === 'summary' && <SummaryScreen />}
+
+        {/* 納品カレンダー */}
+        {appState === 'delivery' && (
+          <DeliveryCalendarScreen
+            onSelectRecord={record => {
+              setSelectedRecord(record);
+              setAppState('detail');
+            }}
+          />
+        )}
 
         {/* 記録詳細 */}
         {appState === 'detail' && selectedRecord && (
