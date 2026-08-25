@@ -51,6 +51,8 @@ export default function App() {
   const [pdfImages, setPdfImages] = useState<string[]>([]);
   const [savedCount, setSavedCount] = useState(0);
   const [selectedRecord, setSelectedRecord] = useState<SavedRecord | null>(null);
+  // 記録詳細をどこから開いたか（戻り先の判定用）
+  const [detailFrom, setDetailFrom] = useState<'list' | 'delivery'>('list');
 
   async function handleScan(mode: ScanMode) {
     try {
@@ -168,9 +170,15 @@ export default function App() {
       <StatusBar barStyle="dark-content" />
 
       <View style={styles.header}>
-        {appState === 'detail' ||
-        appState === 'summary' ||
-        appState === 'delivery' ? (
+        {appState === 'detail' ? (
+          <TouchableOpacity
+            onPress={() => setAppState(detailFrom)}
+            style={styles.resetBtn}>
+            <Text style={styles.resetText}>
+              {detailFrom === 'delivery' ? '‹ 納品カレンダー' : '‹ 一覧'}
+            </Text>
+          </TouchableOpacity>
+        ) : appState === 'summary' || appState === 'delivery' ? (
           <TouchableOpacity onPress={() => setAppState('list')} style={styles.resetBtn}>
             <Text style={styles.resetText}>‹ 一覧</Text>
           </TouchableOpacity>
@@ -235,6 +243,7 @@ export default function App() {
           <RecordList
             onSelect={record => {
               setSelectedRecord(record);
+              setDetailFrom('list');
               setAppState('detail');
             }}
             onOpenSummary={() => setAppState('summary')}
@@ -250,6 +259,7 @@ export default function App() {
           <DeliveryCalendarScreen
             onSelectRecord={record => {
               setSelectedRecord(record);
+              setDetailFrom('delivery');
               setAppState('detail');
             }}
           />
@@ -261,7 +271,7 @@ export default function App() {
             record={selectedRecord}
             onDeleted={() => {
               setSelectedRecord(null);
-              setAppState('list');
+              setAppState(detailFrom);
             }}
           />
         )}
