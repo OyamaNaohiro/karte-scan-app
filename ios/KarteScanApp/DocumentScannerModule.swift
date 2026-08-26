@@ -3,6 +3,7 @@ import UIKit
 import VisionKit
 import Vision
 import NaturalLanguage
+import AVFoundation
 
 // MARK: - DocumentScannerModule
 @objc(DocumentScannerModule)
@@ -31,6 +32,75 @@ class DocumentScannerModule: NSObject {
         return
       }
       rootVC.present(scanner, animated: true)
+    }
+  }
+
+  // MARK: - 無音・手動撮影（映像フレームを取得するためシャッター音が鳴らない）
+  @objc
+  func scanManual(_ resolve: @escaping RCTPromiseResolveBlock,
+                  rejecter reject: @escaping RCTPromiseRejectBlock) {
+    self.resolve = resolve
+    self.reject = reject
+
+    DispatchQueue.main.async {
+      guard let rootVC = UIApplication.shared.windows.first?.rootViewController else {
+        reject("NO_VC", "ViewControllerが取得できません", nil)
+        return
+      }
+      let vc = ManualCaptureViewController()
+      vc.modalPresentationStyle = .fullScreen
+      vc.onCancel = { [weak self] in
+        self?.reject?("CANCELLED", "スキャンがキャンセルされました", nil)
+      }
+      vc.onFinish = { [weak self] images in
+        self?.processCapturedImages(images)
+      }
+      rootVC.present(vc, animated: true)
+    }
+  }
+
+  // 撮影した画像群をOCR・NER処理して結果を返す（scanと同じ pages 形式）
+  private func processCapturedImages(_ images: [UIImage]) {
+    let limited = Array(images.prefix(10))
+    guard !limited.isEmpty else {
+      self.resolve?(["pageCount": 0, "totalScanned": 0, "pages": []])
+      return
+    }
+
+    var pageTexts = [[String]](repeating: [], count: limited.count)
+    var pageImages = [String](repeating: "", count: limited.count)
+    let group = DispatchGroup()
+    let syncQueue = DispatchQueue(label: "manual.ocr.results")
+
+    for (i, image) in limited.enumerated() {
+      pageImages[i] = imageToBase64(image)
+      group.enter()
+      performOCR(on: image) { texts in
+        syncQueue.async {
+          pageTexts[i] = texts
+          group.leave()
+        }
+      }
+    }
+
+    group.notify(queue: .main) {
+      var pages: [[String: Any]] = []
+      for i in 0..<limited.count {
+        let text = pageTexts[i].joined(separator: "\n")
+        let entities = self.extractNamedEntities(from: text)
+        pages.append([
+          "image": pageImages[i],
+          "texts": pageTexts[i],
+          "personNames": entities.personNames,
+          "placeNames": entities.placeNames,
+          "organizationNames": entities.organizationNames,
+        ])
+      }
+      self.resolve?([
+        "pageCount": limited.count,
+        "totalScanned": images.count,
+        "pages": pages,
+      ])
     }
   }
 
@@ -206,5 +276,183 @@ extension DocumentScannerModule: VNDocumentCameraViewControllerDelegate {
                                     didFailWithError error: Error) {
     controller.dismiss(animated: true)
     reject?("SCAN_ERROR", error.localizedDescription, error)
+  }
+}
+
+// MARK: - 無音・手動撮影用カメラ画面
+// AVCaptureVideoDataOutput から映像の1フレームを取り込むため、写真撮影の
+// シャッター音が鳴らない。用紙の自動枠検出は行わず、ユーザーが任意のタイミングで撮る。
+final class ManualCaptureViewController: UIViewController,
+  AVCaptureVideoDataOutputSampleBufferDelegate {
+
+  var onFinish: (([UIImage]) -> Void)?
+  var onCancel: (() -> Void)?
+
+  private let maxPages = 10
+  private let session = AVCaptureSession()
+  private let videoOutput = AVCaptureVideoDataOutput()
+  private let sampleQueue = DispatchQueue(label: "manual.capture.video")
+  private let ciContext = CIContext()
+  private var previewLayer: AVCaptureVideoPreviewLayer?
+
+  private var captured: [UIImage] = []
+  private var wantCapture = false
+  private var finished = false
+
+  private let counterLabel = UILabel()
+  private let shutterButton = UIButton(type: .custom)
+  private let doneButton = UIButton(type: .system)
+  private let cancelButton = UIButton(type: .system)
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    view.backgroundColor = .black
+    setupUI()
+    requestPermissionAndConfigure()
+  }
+
+  private func requestPermissionAndConfigure() {
+    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    case .authorized:
+      configureSession()
+    case .notDetermined:
+      AVCaptureDevice.requestAccess(for: .video) { granted in
+        DispatchQueue.main.async {
+          if granted { self.configureSession() } else { self.cancel() }
+        }
+      }
+    default:
+      cancel()
+    }
+  }
+
+  private func configureSession() {
+    session.beginConfiguration()
+    session.sessionPreset =
+      session.canSetSessionPreset(.hd1920x1080) ? .hd1920x1080 : .high
+
+    guard
+      let device = AVCaptureDevice.default(
+        .builtInWideAngleCamera, for: .video, position: .back),
+      let input = try? AVCaptureDeviceInput(device: device),
+      session.canAddInput(input)
+    else {
+      session.commitConfiguration()
+      return
+    }
+    session.addInput(input)
+
+    videoOutput.videoSettings = [
+      kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+    ]
+    videoOutput.alwaysDiscardsLateVideoFrames = true
+    videoOutput.setSampleBufferDelegate(self, queue: sampleQueue)
+    if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
+    if let conn = videoOutput.connection(with: .video),
+      conn.isVideoOrientationSupported {
+      conn.videoOrientation = .portrait
+    }
+    session.commitConfiguration()
+
+    let preview = AVCaptureVideoPreviewLayer(session: session)
+    preview.videoGravity = .resizeAspectFill
+    preview.frame = view.bounds
+    view.layer.insertSublayer(preview, at: 0)
+    previewLayer = preview
+
+    sampleQueue.async { self.session.startRunning() }
+  }
+
+  private func setupUI() {
+    counterLabel.textColor = .white
+    counterLabel.font = .boldSystemFont(ofSize: 16)
+    counterLabel.textAlignment = .center
+    counterLabel.text = "0 / \(maxPages)"
+    counterLabel.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(counterLabel)
+
+    shutterButton.backgroundColor = .white
+    shutterButton.layer.cornerRadius = 36
+    shutterButton.layer.borderWidth = 4
+    shutterButton.layer.borderColor = UIColor(white: 0.8, alpha: 1).cgColor
+    shutterButton.translatesAutoresizingMaskIntoConstraints = false
+    shutterButton.addTarget(self, action: #selector(onShutter), for: .touchUpInside)
+    view.addSubview(shutterButton)
+
+    cancelButton.setTitle("キャンセル", for: .normal)
+    cancelButton.setTitleColor(.white, for: .normal)
+    cancelButton.titleLabel?.font = .systemFont(ofSize: 16)
+    cancelButton.translatesAutoresizingMaskIntoConstraints = false
+    cancelButton.addTarget(self, action: #selector(onCancelTap), for: .touchUpInside)
+    view.addSubview(cancelButton)
+
+    doneButton.setTitle("完了", for: .normal)
+    doneButton.setTitleColor(.white, for: .normal)
+    doneButton.titleLabel?.font = .boldSystemFont(ofSize: 17)
+    doneButton.translatesAutoresizingMaskIntoConstraints = false
+    doneButton.addTarget(self, action: #selector(onDone), for: .touchUpInside)
+    view.addSubview(doneButton)
+
+    let guide = view.safeAreaLayoutGuide
+    NSLayoutConstraint.activate([
+      counterLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      counterLabel.topAnchor.constraint(equalTo: guide.topAnchor, constant: 16),
+
+      shutterButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      shutterButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -28),
+      shutterButton.widthAnchor.constraint(equalToConstant: 72),
+      shutterButton.heightAnchor.constraint(equalToConstant: 72),
+
+      cancelButton.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 20),
+      cancelButton.centerYAnchor.constraint(equalTo: shutterButton.centerYAnchor),
+
+      doneButton.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -20),
+      doneButton.centerYAnchor.constraint(equalTo: shutterButton.centerYAnchor),
+    ])
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    previewLayer?.frame = view.bounds
+  }
+
+  @objc private func onShutter() { wantCapture = true }
+
+  @objc private func onDone() { finish() }
+
+  @objc private func onCancelTap() { cancel() }
+
+  private func finish() {
+    if finished { return }
+    finished = true
+    sampleQueue.async { self.session.stopRunning() }
+    let images = captured
+    let cb = onFinish
+    dismiss(animated: true) { cb?(images) }
+  }
+
+  private func cancel() {
+    if finished { return }
+    finished = true
+    sampleQueue.async { self.session.stopRunning() }
+    let cb = onCancel
+    dismiss(animated: true) { cb?() }
+  }
+
+  func captureOutput(_ output: AVCaptureOutput,
+                     didOutput sampleBuffer: CMSampleBuffer,
+                     from connection: AVCaptureConnection) {
+    guard wantCapture else { return }
+    wantCapture = false
+    guard let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+    let ci = CIImage(cvPixelBuffer: pixel)
+    guard let cg = ciContext.createCGImage(ci, from: ci.extent) else { return }
+    let image = UIImage(cgImage: cg)
+
+    DispatchQueue.main.async {
+      self.captured.append(image)
+      self.counterLabel.text = "\(self.captured.count) / \(self.maxPages)"
+      if self.captured.count >= self.maxPages { self.finish() }
+    }
   }
 }

@@ -11,4 +11,8 @@ export const DocumentScanner = {
   scan(): Promise<ScanResult> {
     return DocumentScannerModule.scan();
   },
+  // 無音・手動撮影（シャッター音なし・用紙自動検出なし）
+  scanManual(): Promise<ScanResult> {
+    return DocumentScannerModule.scanManual();
+  },
 };

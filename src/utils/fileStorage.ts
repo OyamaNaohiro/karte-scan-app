@@ -93,11 +93,12 @@ async function generatePdf(
 export async function saveRecord(
   karteData: KarteData,
   pageImages: string[],
+  options?: { pdf?: boolean },
 ): Promise<SavedRecord> {
   await ensureDir();
 
+  const withPdf = options?.pdf !== false; // 既定はPDFあり
   const id = `karte_${Date.now()}`;
-  const pdfPath = `${RECORDS_DIR}/${id}.pdf`;
 
   // 受注日が未入力なら保存日をデフォルトに
   const data: KarteData = {
@@ -106,7 +107,12 @@ export async function saveRecord(
   };
 
   const imagePaths = await savePageImages(id, pageImages);
-  await generatePdf(id, buildHtml(data, pageImages), pdfPath);
+
+  let pdfPath = '';
+  if (withPdf) {
+    pdfPath = `${RECORDS_DIR}/${id}.pdf`;
+    await generatePdf(id, buildHtml(data, pageImages), pdfPath);
+  }
 
   const record: SavedRecord = {
     id,

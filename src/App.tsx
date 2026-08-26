@@ -32,7 +32,7 @@ type AppState =
   | 'detail'
   | 'summary'
   | 'delivery';
-type ScanMode = 'ocr' | 'pdf';
+type ScanMode = 'ocr' | 'pdf' | 'ocr-silent';
 
 // 1枚（1書類）分の確認用データ
 interface ReviewDoc {
@@ -53,11 +53,18 @@ export default function App() {
   const [selectedRecord, setSelectedRecord] = useState<SavedRecord | null>(null);
   // 記録詳細をどこから開いたか（戻り先の判定用）
   const [detailFrom, setDetailFrom] = useState<'list' | 'delivery'>('list');
+  // この保存フローでPDFを生成するか（無音モードはPDFなし）
+  const [keepPdf, setKeepPdf] = useState(true);
 
   async function handleScan(mode: ScanMode) {
     try {
       setAppState('scanning');
-      const result = await DocumentScanner.scan();
+      // 無音・手動モードはPDFを残さない記録専用
+      const silent = mode === 'ocr-silent';
+      setKeepPdf(!silent);
+      const result = silent
+        ? await DocumentScanner.scanManual()
+        : await DocumentScanner.scan();
 
       if (!result.pages || result.pages.length === 0) {
         setAppState('idle');
@@ -65,7 +72,7 @@ export default function App() {
         return;
       }
 
-      if (mode === 'ocr') {
+      if (mode === 'ocr' || mode === 'ocr-silent') {
         const docs: ReviewDoc[] = result.pages.map(p => {
           const parsed = parseKarteText(
             p.texts,
@@ -112,7 +119,7 @@ export default function App() {
     if (!doc) return;
     try {
       setAppState('saving');
-      await saveRecord(doc.karteData, [doc.image]);
+      await saveRecord(doc.karteData, [doc.image], { pdf: keepPdf });
       const isLast = currentIndex + 1 >= documents.length;
       if (isLast) {
         setSavedCount(documents.length);
@@ -132,7 +139,7 @@ export default function App() {
     try {
       setAppState('saving');
       for (const doc of documents) {
-        await saveRecord(doc.karteData, [doc.image]);
+        await saveRecord(doc.karteData, [doc.image], { pdf: keepPdf });
       }
       setSavedCount(documents.length);
       setAppState('done');
@@ -162,6 +169,7 @@ export default function App() {
     setCurrentIndex(0);
     setPdfImages([]);
     setSavedCount(0);
+    setKeepPdf(true);
     setAppState('idle');
   }
 
@@ -222,6 +230,15 @@ export default function App() {
               onPress={() => handleScan('ocr')}>
               <Text style={styles.primaryBtnText}>カルテスキャン（OCR）</Text>
               <Text style={styles.btnSubText}>テキスト抽出・編集あり</Text>
+            </TouchableOpacity>
+            <View style={styles.btnSpacer} />
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => handleScan('ocr-silent')}>
+              <Text style={styles.secondaryBtnText}>記録のみ（無音・手動）</Text>
+              <Text style={styles.btnSubTextDark}>
+                シャッター音なし・PDFは残さない
+              </Text>
             </TouchableOpacity>
             <View style={styles.btnSpacer} />
             <TouchableOpacity

@@ -152,10 +152,14 @@ export function RecordDetail({ record, onDeleted, onUpdated }: Props) {
         </>
       )}
 
-      <Text style={styles.pathLabel}>PDF保存先</Text>
-      <Text style={styles.pathText} selectable>
-        {record.pdfPath}
-      </Text>
+      {record.pdfPath ? (
+        <>
+          <Text style={styles.pathLabel}>PDF保存先</Text>
+          <Text style={styles.pathText} selectable>
+            {record.pdfPath}
+          </Text>
+        </>
+      ) : null}
 
       <TouchableOpacity style={styles.deleteBtn} onPress={confirmDelete}>
         <Text style={styles.deleteText}>この記録を削除</Text>
