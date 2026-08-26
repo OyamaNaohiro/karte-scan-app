@@ -303,11 +303,15 @@ final class ManualCaptureViewController: UIViewController,
   private let shutterButton = UIButton(type: .custom)
   private let doneButton = UIButton(type: .system)
   private let cancelButton = UIButton(type: .system)
+  private let flashView = UIView()
+  private let thumbnailView = UIImageView()
+  private let haptic = UIImpactFeedbackGenerator(style: .medium)
 
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .black
     setupUI()
+    haptic.prepare()
     requestPermissionAndConfigure()
   }
 
@@ -393,6 +397,23 @@ final class ManualCaptureViewController: UIViewController,
     doneButton.addTarget(self, action: #selector(onDone), for: .touchUpInside)
     view.addSubview(doneButton)
 
+    // 直近に撮影した画像のサムネイル（撮れたことの確認用）
+    thumbnailView.contentMode = .scaleAspectFill
+    thumbnailView.clipsToBounds = true
+    thumbnailView.layer.cornerRadius = 6
+    thumbnailView.layer.borderWidth = 2
+    thumbnailView.layer.borderColor = UIColor.white.cgColor
+    thumbnailView.isHidden = true
+    thumbnailView.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(thumbnailView)
+
+    // 撮影の瞬間に光らせる白いフラッシュ（操作は透過）
+    flashView.backgroundColor = .white
+    flashView.alpha = 0
+    flashView.isUserInteractionEnabled = false
+    flashView.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(flashView)
+
     let guide = view.safeAreaLayoutGuide
     NSLayoutConstraint.activate([
       counterLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -408,7 +429,39 @@ final class ManualCaptureViewController: UIViewController,
 
       doneButton.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -20),
       doneButton.centerYAnchor.constraint(equalTo: shutterButton.centerYAnchor),
+
+      thumbnailView.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -16),
+      thumbnailView.topAnchor.constraint(equalTo: counterLabel.bottomAnchor, constant: 12),
+      thumbnailView.widthAnchor.constraint(equalToConstant: 54),
+      thumbnailView.heightAnchor.constraint(equalToConstant: 72),
+
+      flashView.topAnchor.constraint(equalTo: view.topAnchor),
+      flashView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      flashView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      flashView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
     ])
+  }
+
+  // 撮影時の視覚フィードバック（白フラッシュ＋サムネイル更新＋シャッターボタンの拡縮）
+  private func showCaptureFeedback(_ image: UIImage) {
+    thumbnailView.image = image
+    thumbnailView.isHidden = false
+
+    flashView.alpha = 0.85
+    UIView.animate(withDuration: 0.28) { self.flashView.alpha = 0 }
+
+    UIView.animate(
+      withDuration: 0.08,
+      animations: { self.shutterButton.transform = CGAffineTransform(scaleX: 0.85, y: 0.85) },
+      completion: { _ in
+        UIView.animate(withDuration: 0.12) {
+          self.shutterButton.transform = .identity
+        }
+      })
+
+    // サムネイルをふわっと出す
+    thumbnailView.transform = CGAffineTransform(scaleX: 0.7, y: 0.7)
+    UIView.animate(withDuration: 0.2) { self.thumbnailView.transform = .identity }
   }
 
   override func viewDidLayoutSubviews() {
@@ -452,6 +505,9 @@ final class ManualCaptureViewController: UIViewController,
     DispatchQueue.main.async {
       self.captured.append(image)
       self.counterLabel.text = "\(self.captured.count) / \(self.maxPages)"
+      self.haptic.impactOccurred()
+      self.haptic.prepare()
+      self.showCaptureFeedback(image)
       if self.captured.count >= self.maxPages { self.finish() }
     }
   }
