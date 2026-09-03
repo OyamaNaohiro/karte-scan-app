@@ -11,7 +11,6 @@ import {
 import {
   computeSummary,
   SummaryResult,
-  SummaryRow,
   HospitalMonthly,
 } from '../utils/summary';
 import { formatYen } from '../utils/format';
@@ -21,37 +20,6 @@ function monthLabel(key: string): string {
   const m = key.match(/^(\d{4})-(\d{2})$/);
   if (!m) return key;
   return `${m[1]}年${Number(m[2])}月`;
-}
-
-function Section({
-  title,
-  rows,
-  labelOf,
-}: {
-  title: string;
-  rows: SummaryRow[];
-  labelOf?: (key: string) => string;
-}) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {rows.length === 0 ? (
-        <Text style={styles.empty}>データがありません。</Text>
-      ) : (
-        rows.map(row => (
-          <View key={row.key} style={styles.row}>
-            <View style={styles.rowLeft}>
-              <Text style={styles.rowKey} numberOfLines={1}>
-                {labelOf ? labelOf(row.key) : row.key}
-              </Text>
-              <Text style={styles.rowCount}>{row.count}件</Text>
-            </View>
-            <Text style={styles.rowTotal}>{formatYen(String(row.total))}</Text>
-          </View>
-        ))
-      )}
-    </View>
-  );
 }
 
 // 病院ごとの月別内訳（タップで開閉）
@@ -127,24 +95,23 @@ export function SummaryScreen() {
     );
   }
 
+  // 今月（受注日ベース）の合計・件数
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const thisMonth = data?.byMonth.find(m => m.key === thisMonthKey);
+
   return (
     <ScrollView
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <View style={styles.totalCard}>
-        <Text style={styles.totalLabel}>合計金額</Text>
+        <Text style={styles.totalLabel}>今月の金額（{monthLabel(thisMonthKey)}）</Text>
         <Text style={styles.totalValue}>
-          {formatYen(String(data?.grandTotal ?? 0)) || '¥0'}
+          {formatYen(String(thisMonth?.total ?? 0)) || '¥0'}
         </Text>
-        <Text style={styles.totalCount}>全{data?.grandCount ?? 0}件</Text>
+        <Text style={styles.totalCount}>{thisMonth?.count ?? 0}件</Text>
       </View>
 
-      <Section title="病院別" rows={data?.byHospital ?? []} />
-      <Section
-        title="月別（受注日）"
-        rows={data?.byMonth ?? []}
-        labelOf={monthLabel}
-      />
       <HospitalMonthlySection rows={data?.byHospitalMonth ?? []} />
     </ScrollView>
   );
