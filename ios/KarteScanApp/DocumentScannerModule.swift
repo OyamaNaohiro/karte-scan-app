@@ -282,8 +282,10 @@ extension DocumentScannerModule: VNDocumentCameraViewControllerDelegate {
 // MARK: - 無音・手動撮影用カメラ画面
 // AVCaptureVideoDataOutput から映像の1フレームを取り込むため、写真撮影の
 // シャッター音が鳴らない。用紙の自動枠検出は行わず、ユーザーが任意のタイミングで撮る。
+// ピンぼけ対策: 近距離優先の連続AF、タップでピント合わせ、シャッター後はピント調整の
+// 完了を待ってから数フレームを取り込み、最も鮮明な1枚を採用する（いずれも無音）。
 final class ManualCaptureViewController: UIViewController,
-  AVCaptureVideoDataOutputSampleBufferDelegate {
+  AVCaptureVideoDataOutputSampleBufferDelegate, UIGestureRecognizerDelegate {
 
   var onFinish: (([UIImage]) -> Void)?
   var onCancel: (() -> Void)?
@@ -294,9 +296,24 @@ final class ManualCaptureViewController: UIViewController,
   private let sampleQueue = DispatchQueue(label: "manual.capture.video")
   private let ciContext = CIContext()
   private var previewLayer: AVCaptureVideoPreviewLayer?
+  private var device: AVCaptureDevice?
+
+  // 取り込み状態（sampleQueue 上でのみ参照する）
+  private enum CaptureState {
+    case idle
+    case waitingFocus(since: CFTimeInterval)
+    case collecting
+  }
+  private var captureState = CaptureState.idle
+  private var bestPixel: CVPixelBuffer?
+  private var bestScore = -1.0
+  private var framesCollected = 0
+  // ピント調整を待つ上限（秒）と、鮮明さを比べるフレーム数
+  private let focusWaitTimeout: CFTimeInterval = 1.0
+  private let framesToCompare = 6
 
   private var captured: [UIImage] = []
-  private var wantCapture = false
+  private var shutterBusy = false
   private var finished = false
 
   private let counterLabel = UILabel()
@@ -305,6 +322,7 @@ final class ManualCaptureViewController: UIViewController,
   private let cancelButton = UIButton(type: .system)
   private let flashView = UIView()
   private let thumbnailView = UIImageView()
+  private let focusIndicator = UIView()
   private let haptic = UIImpactFeedbackGenerator(style: .medium)
 
   override func viewDidLoad() {
@@ -345,6 +363,8 @@ final class ManualCaptureViewController: UIViewController,
       return
     }
     session.addInput(input)
+    self.device = device
+    configureFocus(device)
 
     videoOutput.videoSettings = [
       kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
@@ -365,6 +385,75 @@ final class ManualCaptureViewController: UIViewController,
     previewLayer = preview
 
     sampleQueue.async { self.session.startRunning() }
+  }
+
+  // 書類撮影向けのピント・露出設定（近距離優先の連続AF）
+  private func configureFocus(_ device: AVCaptureDevice) {
+    guard (try? device.lockForConfiguration()) != nil else { return }
+    if device.isAutoFocusRangeRestrictionSupported {
+      device.autoFocusRangeRestriction = .near
+    }
+    // スムーズAFは動画向けで合焦が遅いため切る
+    if device.isSmoothAutoFocusSupported {
+      device.isSmoothAutoFocusEnabled = false
+    }
+    if device.isFocusModeSupported(.continuousAutoFocus) {
+      device.focusMode = .continuousAutoFocus
+    }
+    if device.isExposureModeSupported(.continuousAutoExposure) {
+      device.exposureMode = .continuousAutoExposure
+    }
+    // タップでピントを固定した後、カメラが動いたら連続AFに戻すため
+    device.isSubjectAreaChangeMonitoringEnabled = true
+    device.unlockForConfiguration()
+
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(onSubjectAreaChange),
+      name: .AVCaptureDeviceSubjectAreaDidChange, object: device)
+  }
+
+  // 指定点（デバイス座標 0〜1）にピント・露出を合わせる
+  private func focus(at point: CGPoint, mode: AVCaptureDevice.FocusMode) {
+    guard let device = device, (try? device.lockForConfiguration()) != nil else { return }
+    if device.isFocusPointOfInterestSupported && device.isFocusModeSupported(mode) {
+      device.focusPointOfInterest = point
+      device.focusMode = mode
+    }
+    if device.isExposurePointOfInterestSupported
+      && device.isExposureModeSupported(.continuousAutoExposure) {
+      device.exposurePointOfInterest = point
+      device.exposureMode = .continuousAutoExposure
+    }
+    device.unlockForConfiguration()
+  }
+
+  @objc private func onSubjectAreaChange() {
+    focus(at: CGPoint(x: 0.5, y: 0.5), mode: .continuousAutoFocus)
+  }
+
+  @objc private func onPreviewTap(_ gesture: UITapGestureRecognizer) {
+    guard let preview = previewLayer else { return }
+    let layerPoint = gesture.location(in: view)
+    let devicePoint = preview.captureDevicePointConverted(fromLayerPoint: layerPoint)
+    focus(at: devicePoint, mode: .autoFocus)
+    showFocusIndicator(at: layerPoint)
+  }
+
+  // ボタン上のタップはピント合わせにしない
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                         shouldReceive touch: UITouch) -> Bool {
+    return !(touch.view is UIControl)
+  }
+
+  private func showFocusIndicator(at point: CGPoint) {
+    focusIndicator.layer.removeAllAnimations()
+    focusIndicator.center = point
+    focusIndicator.alpha = 1
+    focusIndicator.transform = CGAffineTransform(scaleX: 1.4, y: 1.4)
+    UIView.animate(withDuration: 0.2) { self.focusIndicator.transform = .identity }
+    UIView.animate(withDuration: 0.3, delay: 0.9, options: [], animations: {
+      self.focusIndicator.alpha = 0
+    })
   }
 
   private func setupUI() {
@@ -413,6 +502,18 @@ final class ManualCaptureViewController: UIViewController,
     flashView.isUserInteractionEnabled = false
     flashView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(flashView)
+
+    // タップした位置に出すピント枠
+    focusIndicator.frame = CGRect(x: 0, y: 0, width: 72, height: 72)
+    focusIndicator.layer.borderColor = UIColor.systemYellow.cgColor
+    focusIndicator.layer.borderWidth = 2
+    focusIndicator.alpha = 0
+    focusIndicator.isUserInteractionEnabled = false
+    view.addSubview(focusIndicator)
+
+    let tap = UITapGestureRecognizer(target: self, action: #selector(onPreviewTap(_:)))
+    tap.delegate = self
+    view.addGestureRecognizer(tap)
 
     let guide = view.safeAreaLayoutGuide
     NSLayoutConstraint.activate([
@@ -469,7 +570,18 @@ final class ManualCaptureViewController: UIViewController,
     previewLayer?.frame = view.bounds
   }
 
-  @objc private func onShutter() { wantCapture = true }
+  @objc private func onShutter() {
+    guard !shutterBusy, !finished, captured.count < maxPages else { return }
+    setShutterBusy(true)
+    let now = CACurrentMediaTime()
+    sampleQueue.async { self.captureState = .waitingFocus(since: now) }
+  }
+
+  // 取り込み中はシャッターを薄くして連打を防ぐ
+  private func setShutterBusy(_ busy: Bool) {
+    shutterBusy = busy
+    shutterButton.alpha = busy ? 0.5 : 1
+  }
 
   @objc private func onDone() { finish() }
 
@@ -495,14 +607,42 @@ final class ManualCaptureViewController: UIViewController,
   func captureOutput(_ output: AVCaptureOutput,
                      didOutput sampleBuffer: CMSampleBuffer,
                      from connection: AVCaptureConnection) {
-    guard wantCapture else { return }
-    wantCapture = false
-    guard let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-    let ci = CIImage(cvPixelBuffer: pixel)
-    guard let cg = ciContext.createCGImage(ci, from: ci.extent) else { return }
+    // ピント調整中はフレームを見送る（上限時間を過ぎたら諦めて取り込む）
+    if case .waitingFocus(let since) = captureState {
+      if let d = device, d.isAdjustingFocus,
+        CACurrentMediaTime() - since < focusWaitTimeout {
+        return
+      }
+      captureState = .collecting
+      bestPixel = nil
+      bestScore = -1
+      framesCollected = 0
+    }
+    guard case .collecting = captureState,
+      let pixel = CMSampleBufferGetImageBuffer(sampleBuffer)
+    else { return }
+
+    // 数フレームのうち最も鮮明なもの（手ブレ・ピンぼけが少ないもの）を残す
+    let score = sharpness(of: pixel)
+    if score > bestScore {
+      bestScore = score
+      bestPixel = pixel
+    }
+    framesCollected += 1
+    guard framesCollected >= framesToCompare, let best = bestPixel else { return }
+    captureState = .idle
+    bestPixel = nil
+
+    let ci = CIImage(cvPixelBuffer: best)
+    guard let cg = ciContext.createCGImage(ci, from: ci.extent) else {
+      DispatchQueue.main.async { self.setShutterBusy(false) }
+      return
+    }
     let image = UIImage(cgImage: cg)
 
     DispatchQueue.main.async {
+      self.setShutterBusy(false)
+      if self.finished { return }
       self.captured.append(image)
       self.counterLabel.text = "\(self.captured.count) / \(self.maxPages)"
       self.haptic.impactOccurred()
@@ -510,5 +650,47 @@ final class ManualCaptureViewController: UIViewController,
       self.showCaptureFeedback(image)
       if self.captured.count >= self.maxPages { self.finish() }
     }
+  }
+
+  // 鮮明さの指標: 中央部の輝度に対するラプラシアンの分散（大きいほどシャープ）
+  private func sharpness(of pixel: CVPixelBuffer) -> Double {
+    CVPixelBufferLockBaseAddress(pixel, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(pixel, .readOnly) }
+    guard let base = CVPixelBufferGetBaseAddress(pixel) else { return 0 }
+    let width = CVPixelBufferGetWidth(pixel)
+    let height = CVPixelBufferGetHeight(pixel)
+    let rowBytes = CVPixelBufferGetBytesPerRow(pixel)
+    let ptr = base.assumingMemoryBound(to: UInt8.self)
+
+    // BGRA → 輝度（整数近似）
+    func luma(_ x: Int, _ y: Int) -> Int {
+      let p = ptr + y * rowBytes + x * 4
+      return (Int(p[0]) * 29 + Int(p[1]) * 150 + Int(p[2]) * 77) >> 8
+    }
+
+    // 中央60%の範囲を2ピクセルおきに調べる（処理を軽くするため）
+    let step = 2
+    let x0 = width / 5 + step, x1 = width - width / 5 - step
+    let y0 = height / 5 + step, y1 = height - height / 5 - step
+    var sum = 0.0
+    var sumSq = 0.0
+    var count = 0.0
+    var y = y0
+    while y < y1 {
+      var x = x0
+      while x < x1 {
+        let lap = 4 * luma(x, y) - luma(x - step, y) - luma(x + step, y)
+          - luma(x, y - step) - luma(x, y + step)
+        let v = Double(lap)
+        sum += v
+        sumSq += v * v
+        count += 1
+        x += step
+      }
+      y += step
+    }
+    guard count > 0 else { return 0 }
+    let mean = sum / count
+    return sumSq / count - mean * mean
   }
 }
