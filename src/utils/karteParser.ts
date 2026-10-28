@@ -13,11 +13,32 @@ function uniq(values: string[]): string[] {
   return out;
 }
 
+// ラベルの文字間に空白（全角・半角）が入っていても一致させる
+// 例: "氏　　　　　名" "住 所" → "氏名" "住所" として扱う
+const keywordRegexCache = new Map<string, RegExp>();
+function keywordRegex(kw: string): RegExp {
+  let re = keywordRegexCache.get(kw);
+  if (!re) {
+    const chars = Array.from(kw).map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    re = new RegExp(chars.join('\\s*'));
+    keywordRegexCache.set(kw, re);
+  }
+  return re;
+}
+
+// 行内でキーワードが現れた位置と、その直後の位置を返す（見つからなければ null）
+function findKeyword(line: string, kw: string): { start: number; end: number } | null {
+  const m = keywordRegex(kw).exec(line);
+  if (!m) return null;
+  return { start: m.index, end: m.index + m[0].length };
+}
+
 // キーワードの後に続く値をすべて抽出
 // 対応形式:
 //   "氏名：山田太郎"  (コロン区切り)
 //   "住所 北海道..."  (スペース区切り)
 //   "患者氏名山田太郎" (区切りなし)
+//   "氏　　名 山田太郎" (ラベルの文字間に空白)
 //   キーワード行の次行に値がある場合
 function extractAllAfterKeyword(lines: string[], keywords: string[]): string[] {
   const found: string[] = [];
@@ -25,10 +46,12 @@ function extractAllAfterKeyword(lines: string[], keywords: string[]): string[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     for (const kw of keywords) {
-      if (!line.includes(kw)) continue;
+      const hit = findKeyword(line, kw);
+      if (!hit) continue;
+      // "義肢装具士の氏名を記載" のように文中で参照されているだけのラベルは除外
+      if (hit.start > 0 && line[hit.start - 1] === 'の') continue;
 
-      const kwPos = line.indexOf(kw);
-      const afterKw = line.slice(kwPos + kw.length).trim();
+      const afterKw = line.slice(hit.end).trim();
 
       if (afterKw) {
         const colonMatch = afterKw.match(/^[：:]\s*(.*)/);
@@ -78,8 +101,8 @@ function trimNameValue(raw: string): string {
   let s = raw.trim();
   let end = s.length;
   for (const w of NAME_CUT_WORDS) {
-    const i = s.indexOf(w);
-    if (i > 0 && i < end) end = i;
+    const hit = findKeyword(s, w);
+    if (hit && hit.start > 0 && hit.start < end) end = hit.start;
   }
   // 数字・和暦が現れたらそこで切る
   const dateMatch = s.slice(0, end).match(/[0-9０-９]|昭和|平成|令和|大正|明治/);
@@ -120,7 +143,9 @@ function isValidName(raw: string): boolean {
   if (/[0-9０-９]/.test(s)) return false; // 数字を含む＝生年月日・番号など
   if (/[：:／\/|｜\-]/.test(s)) return false;
   if (/(昭和|平成|令和|大正|明治)/.test(s)) return false; // 和暦
-  if (NAME_STOP_WORDS.some(w => s.includes(w))) return false;
+  // "氏　名" のように空白を挟んだラベル語も弾く
+  const compact = s.replace(/\s/g, '');
+  if (NAME_STOP_WORDS.some(w => compact.includes(w))) return false;
   return true;
 }
 
@@ -165,7 +190,12 @@ function isKeywordLine(line: string): boolean {
 // - 昭和・大正・明治の和暦 … 誕生日の可能性が高い
 // - 平成 … 中程度、令和 … 低い（処方日・作成日のことが多い）
 // 電話番号(0144-87-2158)などを誤検出しないよう、西暦はハイフン区切りを避ける。
-function extractBirthDates(text: string): string[] {
+function extractBirthDates(rawText: string): string[] {
+  // 様式の改正日・作成日など（"平成24年3月5日改正"）は生年月日ではないので先に取り除く
+  const text = rawText.replace(
+    /(?:昭和|平成|令和|大正|明治)?\s*\d{1,4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*(?:改正|改訂|改定|制定|作成|発行|印刷)/g,
+    '',
+  );
   const scored: { value: string; score: number }[] = [];
   const push = (value: string, score: number) => {
     const t = value.trim();
@@ -174,7 +204,7 @@ function extractBirthDates(text: string): string[] {
 
   // 明示ラベル付き（和暦・西暦どちらも）
   for (const m of text.matchAll(
-    /生年月日[：:\s]*((?:昭和|平成|令和|大正|明治)?\s*\d{1,4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)/g,
+    /生\s*年\s*月\s*日[：:\s]*((?:昭和|平成|令和|大正|明治)?\s*\d{1,4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日?)/g,
   )) {
     push(m[1], 100);
   }
@@ -222,39 +252,55 @@ function extractGenders(text: string): string[] {
 
 // 病名行の同行内容がラベル説明かどうか判定
 // "・依頼内容・コメントなど" のようなラベル説明文は実際の病名ではない
-const LABEL_WORDS = ['依頼', 'コメント', '内容', '記載', '備考'];
+const LABEL_WORDS = ['依頼', 'コメント', '内容', '記載', '備考', '上記'];
+
+// 病名の値から、括弧書きの注記・「症状等」以降を切り捨てる
+// 例: "両側性変形性膝関節症 （治療遂行上の必要…） 症状等 患部固定の為" → "両側性変形性膝関節症"
+function trimDiagnosisValue(raw: string): { value: string; cut: boolean } {
+  const m = raw.match(/[（(]|症\s*状\s*等/);
+  if (!m || m.index === undefined) return { value: raw.trim(), cut: false };
+  return { value: raw.slice(0, m.index).trim(), cut: true };
+}
 function isDiagnosisLabel(text: string): boolean {
   return LABEL_WORDS.some(w => text.includes(w));
 }
 
 // 病名抽出（ラベル説明行と Dr./Ns. 行を除外）
 function extractRawDiagnoses(lines: string[]): string[] {
-  const diagKeywords = ['病名', '診断名', '診断', '傷病名', '主病名', 'Diagnosis'];
+  // 長いキーワードを先に並べ、1行につき最初に一致したものだけを使う
+  // （"疾病名" の行に "病名" が重ねて一致しないように）
+  const diagKeywords = ['疾病名', '傷病名', '主病名', '診断名', '病名', '診断', 'Diagnosis'];
   const results: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     for (const kw of diagKeywords) {
-      if (!line.includes(kw)) continue;
+      const hit = findKeyword(line, kw);
+      if (!hit) continue;
 
-      const kwPos = line.indexOf(kw);
-      const afterKw = line.slice(kwPos + kw.length).replace(/^[：:・\s]+/, '').trim();
+      const afterKw = line.slice(hit.end).replace(/^[：:・\s]+/, '').trim();
+      // "疾病名及び症状等" のような見出し行は値を持たない
+      if (/^(及び|および)/.test(afterKw)) break;
 
       const found: string[] = [];
       // 同行値がラベル説明でなければ採用
-      if (afterKw && !isDiagnosisLabel(afterKw)) found.push(afterKw);
+      const same = trimDiagnosisValue(afterKw);
+      if (same.value && !isDiagnosisLabel(same.value)) found.push(same.value);
 
-      // 続く行を最大4行まで取り込む
+      // 続く行を最大4行まで取り込む（同行の値が注記で切れた場合は病名が終わっている）
       let j = i + 1;
-      while (j < lines.length && j <= i + 4) {
+      while (!same.cut && j < lines.length && j <= i + 4) {
         const next = lines[j].trim();
         if (next && !isKeywordLine(next) && !isDiagnosisLabel(next)) {
-          found.push(next);
+          const t = trimDiagnosisValue(next);
+          if (t.value) found.push(t.value);
+          if (t.cut) break;
           j++;
         } else break;
       }
 
       if (found.length > 0) results.push(found.join(' '));
+      break;
     }
   }
   return uniq(results);
@@ -273,7 +319,14 @@ function splitDiagnosisAndDevice(raw: string): { diagnosis: string; device: stri
     if (idx === -1) continue;
 
     const before = raw.slice(0, idx);
-    const spaceIdx = before.lastIndexOf(' ');
+    // "L4/5腰椎椎間板ヘルニア、ダーメンコルセット" のような読点区切りにも対応
+    const spaceIdx = Math.max(
+      before.lastIndexOf(' '),
+      before.lastIndexOf('　'),
+      before.lastIndexOf('、'),
+      before.lastIndexOf(','),
+      before.lastIndexOf('，'),
+    );
     if (spaceIdx !== -1) {
       return {
         diagnosis: raw.slice(0, spaceIdx).trim(),
@@ -295,11 +348,14 @@ const ORTHOSIS_MARKERS = [
   '補高', 'サポート', 'ウルトラ',
 ];
 // ヘッダー・会社名など装具名ではない行を除外する語
-const ORTHOSIS_EXCLUDE = ['種類', '指示', '依頼', '伝票', '義肢'];
+// "上記の疾病により（オーダーメイド 既製品装具 …）" のような選択肢の説明行も除外
+const ORTHOSIS_EXCLUDE = ['種類', '指示', '依頼', '伝票', '義肢', '上記', '既製品装具'];
 
 // 装具名の前後の記号・囲み文字を除去
+// 行頭の括弧書きの記入説明 "（オーダーメイドの場合は…等） 膝装具…" も取り除く
 function cleanDeviceName(line: string): string {
   return line
+    .replace(/^\s*[（(][^（()）]*[）)]\s*/, '')
     .replace(/^[（(「『【\s]+/, '')
     .replace(/[（(）)「『」』【】、。・"“”½\s]+$/, '')
     .trim();
@@ -309,10 +365,17 @@ function cleanDeviceName(line: string): string {
 function extractDeviceCandidates(lines: string[]): string[] {
   const found: string[] = [];
   for (const line of lines) {
-    if (!ORTHOSIS_MARKERS.some(m => line.includes(m))) continue;
-    if (ORTHOSIS_EXCLUDE.some(w => line.includes(w))) continue;
-    const name = cleanDeviceName(line);
-    if (name.length >= 3 && name.length <= 30) found.push(name);
+    // "腰椎装具軟性 病名・依頼内容…" のように後ろに病名ラベルが続く行は手前だけを見る
+    const labelHit = findKeyword(line, '病名');
+    const head = labelHit && labelHit.start > 0 ? line.slice(0, labelHit.start) : line;
+    // 読点で並んだ "病名、装具名" は装具名の部分だけを候補にする
+    // （行頭の括弧書きの説明を先に除いてから分ける。説明文の中の読点で切らないため）
+    for (const part of cleanDeviceName(head).split(/[、，,]/)) {
+      const name = cleanDeviceName(part);
+      if (!ORTHOSIS_MARKERS.some(m => name.includes(m))) continue;
+      if (ORTHOSIS_EXCLUDE.some(w => name.includes(w))) continue;
+      if (name.length >= 3 && name.length <= 30) found.push(name);
+    }
   }
   return uniq(found);
 }
@@ -343,7 +406,8 @@ function extractAddresses(lines: string[], fullText: string, placeNames: string[
   const joinedPlaces = placeNames.join(' ').trim();
   if (joinedPlaces) found.push(joinedPlaces);
 
-  return uniq(found);
+  // OCRで紛れ込む語頭のハイフン（"北海道 -登別市"）を除去
+  return uniq(found.map(v => v.replace(/(^|\s)[-‐－ー]+(?=\S)/g, '$1')));
 }
 
 // 電話番号の抽出（キーワード → 電話番号らしい数字列）
@@ -361,7 +425,8 @@ function extractPhones(lines: string[], fullText: string): string[] {
     const m = v.match(/0\d{1,4}[-‐－(]\d{1,4}[-‐－)]\d{3,4}/);
     return m ? m[0] : v.trim();
   });
-  return uniq(cleaned);
+  // 数字を含まないもの（"TEL出ず" のようなメモ）は電話番号ではない
+  return uniq(cleaned.filter(v => /[0-9０-９]/.test(v)));
 }
 
 // 保険の抽出（"保険" / OCRで崩れた "保健" にも対応）
@@ -369,9 +434,15 @@ function extractInsurances(lines: string[]): string[] {
   const found = extractAllAfterKeyword(lines, [
     '保険種別', '保険区分', '保険', '保健',
   ]);
-  // 先頭の注記 "（○○記入）：" を除去
+  // 先頭の注記 "（○○記入）：" を除去し、後ろに続く日付・電話メモを切り捨てる
+  // 例: "国保 R6.1.17TEL出ず" → "国保"
   return uniq(
-    found.map(v => v.replace(/^[（(][^）)]*[）)]\s*[：:]?\s*/, '').trim()),
+    found.map(v =>
+      v
+        .replace(/^[（(][^）)]*[）)]\s*[：:]?\s*/, '')
+        .replace(/\s*(?:TEL|Tel|tel|電話|℡|[RHSＲＨＳ]\s*\d{1,2}\s*[.．\/]\s*\d).*$/, '')
+        .trim(),
+    ),
   );
 }
 
@@ -417,6 +488,18 @@ export function parseKarteText(
   // 信頼度順: 明示ラベル → 生年月日隣接 → NER人名
   // （ラベルが無い書類では生年月日の隣が氏名であることが多く、医師名などの
   //   NER候補より優先したい）
+  // "Dr. （X） NS." のような空欄は、看護師欄・括弧書きを除くと名前が残らないので捨てる
+  const doctors = uniq(
+    extractAllAfterKeyword(lines, [
+      '担当医', '主治医', '医師氏名', '医師名', '担当医師', 'Dr.', 'Dr ',
+    ]).map(v =>
+      v
+        .replace(/\s*(?:N[sS]\b|NS|看護).*$/, '')
+        .replace(/[（(][^）)]*[）)]/g, '')
+        .trim(),
+    ),
+  ).filter(v => /[一-龥ぁ-んァ-ヶA-Za-z]{2,}/.test(v));
+
   const patientNames = uniq(
     [
       ...extractAllAfterKeyword(lines, ['患者氏名', '患者名', '氏名', '名前', 'Name']),
@@ -426,7 +509,9 @@ export function parseKarteText(
       .map(trimNameValue)
       .map(stripFurigana)
       .map(cleanName)
-      .filter(isValidName),
+      .filter(isValidName)
+      // "医師 氏名 石川 一郎" は「氏名」にも一致するため、医師名は患者氏名から外す
+      .filter(n => !doctors.some(d => cleanName(d) === n)),
   );
 
   const genders = extractGenders(fullText);
@@ -440,9 +525,6 @@ export function parseKarteText(
   const diagnoses = uniq(split.map(s => s.diagnosis));
   const devices = uniq(split.map(s => s.device));
 
-  const doctors = extractAllAfterKeyword(lines, [
-    '担当医', '主治医', '医師名', '担当医師', 'Dr.', 'Dr ',
-  ]);
   const prescriptions = extractPrescriptions(lines, devices);
 
   const candidates: KarteCandidates = {
